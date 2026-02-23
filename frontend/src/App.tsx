@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import MonacoEditor, { DEFAULT_SKETCH } from './components/MonacoEditor'
+import Board from './components/Board'
+import type { PinState } from './components/pinDefinitions'
 import './components/MonacoEditor.css'
+import './components/Board.css'
 import './App.css'
 
 /**
@@ -9,6 +12,21 @@ import './App.css'
  */
 function App() {
   const [code, setCode] = useState(DEFAULT_SKETCH)
+  const [selectedPin, setSelectedPin] = useState<number | null>(null)
+
+  // Initialize pin states — all INPUT / LOW by default
+  const [pinStates] = useState<Map<number, PinState>>(() => {
+    const map = new Map<number, PinState>()
+    for (let i = 0; i < 49; i++) {
+      map.set(i, { number: i, mode: 'INPUT', state: 'LOW' })
+    }
+    return map
+  })
+
+  const handlePinClick = useCallback((gpio: number) => {
+    setSelectedPin((prev) => (prev === gpio ? null : gpio))
+    console.log(`Pin clicked: GPIO${gpio}`, pinStates.get(gpio))
+  }, [pinStates])
 
   return (
     <div className="app">
@@ -38,17 +56,22 @@ function App() {
           </div>
         </section>
 
-        {/* Right Panel — Board Visualization (Step 3) */}
+        {/* Right Panel — Board Visualization */}
         <section className="panel">
-          <div className="panel__header">🔌 Board</div>
-          <div className="panel__content">
-            <div className="placeholder">
-              <div className="placeholder__icon">🔌</div>
-              <p>ESP32-S3 Board will be here</p>
-              <p style={{ fontSize: '0.75rem', marginTop: '4px' }}>
-                (Step 3 — Board.tsx)
-              </p>
-            </div>
+          <div className="panel__header">
+            🔌 Board
+            {selectedPin !== null && (
+              <span style={{ marginLeft: '12px', fontFamily: 'var(--font-mono)', color: 'var(--accent-success)' }}>
+                · GPIO{selectedPin} selected
+              </span>
+            )}
+          </div>
+          <div className="panel__content" style={{ padding: 0 }}>
+            <Board
+              pinStates={pinStates}
+              onPinClick={handlePinClick}
+              selectedPin={selectedPin}
+            />
           </div>
         </section>
       </main>
