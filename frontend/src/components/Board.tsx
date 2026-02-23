@@ -110,13 +110,12 @@ function PinCircle({ pin, x, y, side, pinStates, selectedPin, onPinClick, hovere
 interface PlacedLEDProps {
     comp: PlacedComponent
     onDragStart: (id: string, e: React.MouseEvent) => void
-    onToggle: (id: string) => void
     onSelect: (id: string) => void
     isDragging: boolean
     isSelected: boolean
 }
 
-function PlacedLED({ comp, onDragStart, onToggle, onSelect, isDragging, isSelected }: PlacedLEDProps) {
+function PlacedLED({ comp, onDragStart, onSelect, isDragging, isSelected }: PlacedLEDProps) {
     const r = 20
     return (
         <g
@@ -195,11 +194,14 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
     const svgRef = useRef<SVGSVGElement>(null)
     const zoomPercent = Math.round((1 / (viewBox.w / BOARD_WIDTH)) * 100)
 
+    // Board position (draggable like components)
+    const [boardOffset, setBoardOffset] = useState({ x: 0, y: 0 })
+
     // Palette & placement mode
     const [showPalette, setShowPalette] = useState(false)
     const [placementMode, setPlacementMode] = useState<{ type: ComponentType; color: string; label: string } | null>(null)
 
-    // Dragging & selecting placed components
+    // Dragging & selecting — '__board__' is the special ID for the board itself
     const [draggingId, setDraggingId] = useState<string | null>(null)
     const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null)
     const dragOffset = useRef({ x: 0, y: 0 })
@@ -241,12 +243,16 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
     }, [placementMode, draggingId])
 
     const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
-        // Handle component dragging
+        // Handle dragging (board or component)
         if (draggingId) {
             const pos = screenToSVG(e.clientX, e.clientY)
-            onComponentsChange(placedComponents.map(c =>
-                c.id === draggingId ? { ...c, x: pos.x - dragOffset.current.x, y: pos.y - dragOffset.current.y } : c
-            ))
+            if (draggingId === '__board__') {
+                setBoardOffset({ x: pos.x - dragOffset.current.x, y: pos.y - dragOffset.current.y })
+            } else {
+                onComponentsChange(placedComponents.map(c =>
+                    c.id === draggingId ? { ...c, x: pos.x - dragOffset.current.x, y: pos.y - dragOffset.current.y } : c
+                ))
+            }
             return
         }
         // Handle panning
@@ -300,11 +306,7 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
     }, [placedComponents, screenToSVG])
 
     // ===== Toggle component ON/OFF =====
-    const handleToggle = useCallback((id: string) => {
-        onComponentsChange(placedComponents.map(c =>
-            c.id === id ? { ...c, on: !c.on } : c
-        ))
-    }, [onComponentsChange, placedComponents])
+
 
     // ===== Select palette item =====
     const handlePaletteSelect = useCallback((item: typeof PALETTE_ITEMS[0]) => {
@@ -419,70 +421,83 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                 onClick={handleSVGClick}
                 style={{ cursor: svgCursor }}
             >
-                {/* Board PCB body */}
-                <rect x={PCB_LEFT} y={12} width={PCB_WIDTH} height={BOARD_HEIGHT - 24}
-                    rx={12} fill="#1a3a2a" stroke="#2d5a3d" strokeWidth={2} />
-                <rect x={PCB_LEFT + 7} y={20} width={PCB_WIDTH - 14} height={BOARD_HEIGHT - 40}
-                    rx={8} fill="#0d2818" opacity={0.6} />
+                {/* ===== Draggable Board Group ===== */}
+                <g
+                    transform={`translate(${boardOffset.x}, ${boardOffset.y})`}
+                    style={{ cursor: draggingId === '__board__' ? 'grabbing' : 'grab' }}
+                    onMouseDown={(e) => {
+                        if (e.button !== 0 || placementMode) return
+                        e.stopPropagation()
+                        const pos = screenToSVG(e.clientX, e.clientY)
+                        dragOffset.current = { x: pos.x - boardOffset.x, y: pos.y - boardOffset.y }
+                        setDraggingId('__board__')
+                        setSelectedComponentId(null)
+                    }}
+                >
+                    {/* Board PCB body */}
+                    <rect x={PCB_LEFT} y={12} width={PCB_WIDTH} height={BOARD_HEIGHT - 24}
+                        rx={12} fill="#1a3a2a" stroke="#2d5a3d" strokeWidth={2} />
+                    <rect x={PCB_LEFT + 7} y={20} width={PCB_WIDTH - 14} height={BOARD_HEIGHT - 40}
+                        rx={8} fill="#0d2818" opacity={0.6} />
 
-                {/* USB-C */}
-                <rect x={BOARD_WIDTH / 2 - 30} y={6} width={60} height={18} rx={4} fill="#888" stroke="#aaa" strokeWidth={1} />
-                <rect x={BOARD_WIDTH / 2 - 20} y={10} width={40} height={10} rx={2} fill="#555" />
-                <text x={BOARD_WIDTH / 2} y={17} textAnchor="middle" fontSize={6} fill="#ccc" fontFamily="'Inter', sans-serif">USB-C</text>
+                    {/* USB-C */}
+                    <rect x={BOARD_WIDTH / 2 - 30} y={6} width={60} height={18} rx={4} fill="#888" stroke="#aaa" strokeWidth={1} />
+                    <rect x={BOARD_WIDTH / 2 - 20} y={10} width={40} height={10} rx={2} fill="#555" />
+                    <text x={BOARD_WIDTH / 2} y={17} textAnchor="middle" fontSize={6} fill="#ccc" fontFamily="'Inter', sans-serif">USB-C</text>
 
-                {/* Chip */}
-                <rect x={BOARD_WIDTH / 2 - 60} y={200} width={120} height={120} rx={4} fill="#222" stroke="#444" strokeWidth={1.5} />
-                <rect x={BOARD_WIDTH / 2 - 52} y={208} width={104} height={104} rx={2} fill="#1a1a1a" />
-                <text x={BOARD_WIDTH / 2} y={252} textAnchor="middle" fontSize={11} fontWeight="bold" fontFamily="'Inter', sans-serif" fill="#4ecca3">ESP32-S3</text>
-                <text x={BOARD_WIDTH / 2} y={268} textAnchor="middle" fontSize={8} fontFamily="'Inter', sans-serif" fill="#666">WROOM-1</text>
+                    {/* Chip */}
+                    <rect x={BOARD_WIDTH / 2 - 60} y={200} width={120} height={120} rx={4} fill="#222" stroke="#444" strokeWidth={1.5} />
+                    <rect x={BOARD_WIDTH / 2 - 52} y={208} width={104} height={104} rx={2} fill="#1a1a1a" />
+                    <text x={BOARD_WIDTH / 2} y={252} textAnchor="middle" fontSize={11} fontWeight="bold" fontFamily="'Inter', sans-serif" fill="#4ecca3">ESP32-S3</text>
+                    <text x={BOARD_WIDTH / 2} y={268} textAnchor="middle" fontSize={8} fontFamily="'Inter', sans-serif" fill="#666">WROOM-1</text>
 
-                {/* Antenna */}
-                <rect x={BOARD_WIDTH / 2 - 35} y={40} width={70} height={50} rx={3} fill="none" stroke="#4ecca355" strokeWidth={1} strokeDasharray="3 2" />
-                <text x={BOARD_WIDTH / 2} y={70} textAnchor="middle" fontSize={7} fontFamily="'Inter', sans-serif" fill="#4ecca355">ANTENNA</text>
+                    {/* Antenna */}
+                    <rect x={BOARD_WIDTH / 2 - 35} y={40} width={70} height={50} rx={3} fill="none" stroke="#4ecca355" strokeWidth={1} strokeDasharray="3 2" />
+                    <text x={BOARD_WIDTH / 2} y={70} textAnchor="middle" fontSize={7} fontFamily="'Inter', sans-serif" fill="#4ecca355">ANTENNA</text>
 
-                {/* Buttons */}
-                <rect x={PCB_LEFT + 20} y={370} width={24} height={14} rx={3} fill="#333" stroke="#555" strokeWidth={1} />
-                <text x={PCB_LEFT + 32} y={395} textAnchor="middle" fontSize={6} fill="#888" fontFamily="'Inter', sans-serif">BOOT</text>
-                <rect x={BOARD_WIDTH - PCB_LEFT - 44} y={370} width={24} height={14} rx={3} fill="#333" stroke="#555" strokeWidth={1} />
-                <text x={BOARD_WIDTH - PCB_LEFT - 32} y={395} textAnchor="middle" fontSize={6} fill="#888" fontFamily="'Inter', sans-serif">RST</text>
+                    {/* Buttons */}
+                    <rect x={PCB_LEFT + 20} y={370} width={24} height={14} rx={3} fill="#333" stroke="#555" strokeWidth={1} />
+                    <text x={PCB_LEFT + 32} y={395} textAnchor="middle" fontSize={6} fill="#888" fontFamily="'Inter', sans-serif">BOOT</text>
+                    <rect x={BOARD_WIDTH - PCB_LEFT - 44} y={370} width={24} height={14} rx={3} fill="#333" stroke="#555" strokeWidth={1} />
+                    <text x={BOARD_WIDTH - PCB_LEFT - 32} y={395} textAnchor="middle" fontSize={6} fill="#888" fontFamily="'Inter', sans-serif">RST</text>
 
-                {/* Built-in LEDs */}
-                <circle cx={BOARD_WIDTH - PCB_LEFT - 30} cy={440} r={5} fill={pinStates.get(48)?.state === 'HIGH' ? '#4ecca3' : '#222'} stroke="#4ecca3" strokeWidth={1} />
-                <text x={BOARD_WIDTH - PCB_LEFT - 30} y={455} textAnchor="middle" fontSize={6} fill="#666" fontFamily="'Inter', sans-serif">LED</text>
-                <circle cx={PCB_LEFT + 30} cy={440} r={4} fill="#e9456066" stroke="#e94560" strokeWidth={1} />
-                <text x={PCB_LEFT + 30} y={455} textAnchor="middle" fontSize={6} fill="#666" fontFamily="'Inter', sans-serif">PWR</text>
+                    {/* Built-in LEDs */}
+                    <circle cx={BOARD_WIDTH - PCB_LEFT - 30} cy={440} r={5} fill={pinStates.get(48)?.state === 'HIGH' ? '#4ecca3' : '#222'} stroke="#4ecca3" strokeWidth={1} />
+                    <text x={BOARD_WIDTH - PCB_LEFT - 30} y={455} textAnchor="middle" fontSize={6} fill="#666" fontFamily="'Inter', sans-serif">LED</text>
+                    <circle cx={PCB_LEFT + 30} cy={440} r={4} fill="#e9456066" stroke="#e94560" strokeWidth={1} />
+                    <text x={PCB_LEFT + 30} y={455} textAnchor="middle" fontSize={6} fill="#666" fontFamily="'Inter', sans-serif">PWR</text>
 
-                {/* Pins */}
-                {LEFT_PINS.map((pin, i) => (
-                    <PinCircle key={`left-${i}`} pin={pin} x={LEFT_PIN_X} y={PIN_START_Y + i * PIN_SPACING}
-                        side="left" pinStates={pinStates} selectedPin={selectedPin} onPinClick={onPinClick}
-                        hoveredPin={hoveredPin} onHover={setHoveredPin} />
-                ))}
-                {RIGHT_PINS.map((pin, i) => (
-                    <PinCircle key={`right-${i}`} pin={pin} x={RIGHT_PIN_X} y={PIN_START_Y + i * PIN_SPACING}
-                        side="right" pinStates={pinStates} selectedPin={selectedPin} onPinClick={onPinClick}
-                        hoveredPin={hoveredPin} onHover={setHoveredPin} />
-                ))}
+                    {/* Pins */}
+                    {LEFT_PINS.map((pin, i) => (
+                        <PinCircle key={`left-${i}`} pin={pin} x={LEFT_PIN_X} y={PIN_START_Y + i * PIN_SPACING}
+                            side="left" pinStates={pinStates} selectedPin={selectedPin} onPinClick={onPinClick}
+                            hoveredPin={hoveredPin} onHover={setHoveredPin} />
+                    ))}
+                    {RIGHT_PINS.map((pin, i) => (
+                        <PinCircle key={`right-${i}`} pin={pin} x={RIGHT_PIN_X} y={PIN_START_Y + i * PIN_SPACING}
+                            side="right" pinStates={pinStates} selectedPin={selectedPin} onPinClick={onPinClick}
+                            hoveredPin={hoveredPin} onHover={setHoveredPin} />
+                    ))}
 
-                {/* Placed Components */}
+                    {/* Board label */}
+                    <text x={BOARD_WIDTH / 2} y={BOARD_HEIGHT - 18} textAnchor="middle" fontSize={8} fontFamily="'Inter', sans-serif" fill="#4ecca355">
+                        ESP32-S3-DevKitC-1
+                    </text>
+                </g>
+
+                {/* Placed Components (independent of board position) */}
                 {placedComponents.map(comp => (
                     comp.type === 'led' && (
                         <PlacedLED
                             key={comp.id}
                             comp={comp}
                             onDragStart={handleComponentDragStart}
-                            onToggle={handleToggle}
                             onSelect={setSelectedComponentId}
                             isDragging={draggingId === comp.id}
                             isSelected={selectedComponentId === comp.id}
                         />
                     )
                 ))}
-
-                {/* Board label */}
-                <text x={BOARD_WIDTH / 2} y={BOARD_HEIGHT - 18} textAnchor="middle" fontSize={8} fontFamily="'Inter', sans-serif" fill="#4ecca355">
-                    ESP32-S3-DevKitC-1
-                </text>
             </svg>
         </div>
     )
