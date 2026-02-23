@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import MonacoEditor, { DEFAULT_SKETCH } from './components/MonacoEditor'
 import Board from './components/Board'
-import type { PlacedComponent } from './components/Board'
+import type { PlacedComponent, Wire } from './components/Board'
 import useWebSocket from './hooks/useWebSocket'
 import './components/MonacoEditor.css'
 import './components/Board.css'
@@ -20,6 +20,9 @@ function App() {
 
   // Placed components on the board
   const [placedComponents, setPlacedComponents] = useState<PlacedComponent[]>([])
+
+  // Wires connecting pins to components
+  const [wires, setWires] = useState<Wire[]>([])
 
   const handlePinClick = useCallback((gpio: number) => {
     setSelectedPin((prev) => (prev === gpio ? null : gpio))
@@ -132,6 +135,8 @@ function App() {
               selectedPin={selectedPin}
               placedComponents={placedComponents}
               onComponentsChange={setPlacedComponents}
+              wires={wires}
+              onWiresChange={setWires}
             />
           </div>
         </section>

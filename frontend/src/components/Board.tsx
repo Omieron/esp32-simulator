@@ -17,6 +17,39 @@ export interface PlacedComponent {
     screenText?: string  // OLED: text to display
 }
 
+// ===== Wire Types =====
+
+export interface Wire {
+    id: string
+    fromPin: number       // GPIO number
+    toComponentId: string // Component ID
+    toComponentPin: string // Component Pin identifier
+    color: string         // Wire color
+}
+
+const WIRE_COLORS = ['#e94560', '#4ecca3', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
+
+// ===== Component Pin Constants =====
+export function getComponentPinOffset(type: ComponentType, pinId: string): { x: number; y: number } {
+    if (type === 'led') {
+        const r = 38
+        if (pinId === 'anode') return { x: 7.5, y: r + 30 }
+        if (pinId === 'cathode') return { x: -7.5, y: r + 24 }
+    } else if (type === 'button') {
+        if (pinId === 'tl') return { x: -48, y: -8.5 }
+        if (pinId === 'tr') return { x: 48, y: -8.5 }
+        if (pinId === 'bl') return { x: -48, y: 9.5 }
+        if (pinId === 'br') return { x: 48, y: 9.5 }
+    } else if (type === 'oled') {
+        const y = 55 // h/2 + 5
+        if (pinId === 'gnd') return { x: -30, y }
+        if (pinId === 'vcc') return { x: -10, y }
+        if (pinId === 'scl') return { x: 10, y }
+        if (pinId === 'sda') return { x: 30, y }
+    }
+    return { x: 0, y: 0 }
+}
+
 // ===== Props Interface =====
 
 export interface BoardProps {
@@ -26,6 +59,9 @@ export interface BoardProps {
     /** Placed components on the board */
     placedComponents: PlacedComponent[]
     onComponentsChange: (components: PlacedComponent[]) => void
+    /** Wires connecting pins to components */
+    wires: Wire[]
+    onWiresChange: (wires: Wire[]) => void
 }
 
 // ===== Board Layout Constants =====
@@ -69,31 +105,31 @@ interface PinCircleProps {
 function PinCircle({ pin, x, y, side, pinStates, selectedPin, onPinClick, hoveredPin, onHover }: PinCircleProps) {
     const color = getPinColor(pin, pinStates, selectedPin)
     const isHovered = hoveredPin === pin.gpio
-    const isInteractive = !pin.isPower
+    const isPower = !!pin.isPower
     const labelX = side === 'left' ? x - LABEL_OFFSET : x + LABEL_OFFSET
     const textAnchor = side === 'left' ? 'end' : 'start'
 
     return (
         <g
-            style={{ cursor: isInteractive ? 'pointer' : 'default' }}
-            onClick={(e) => { e.stopPropagation(); isInteractive && onPinClick?.(pin.gpio) }}
+            style={{ cursor: 'pointer' }}
+            onClick={(e) => { e.stopPropagation(); onPinClick?.(pin.gpio) }}
             onMouseEnter={() => onHover(pin.gpio)}
             onMouseLeave={() => onHover(null)}
         >
             <circle
                 cx={x} cy={y}
-                r={isHovered && isInteractive ? PIN_RADIUS + 2 : PIN_RADIUS}
+                r={isHovered ? PIN_RADIUS + 2 : PIN_RADIUS}
                 fill={color}
-                stroke={isHovered && isInteractive ? '#fff' : 'none'}
+                stroke={isHovered ? '#fff' : 'none'}
                 strokeWidth={isHovered ? 2 : 0}
-                style={{ transition: 'all 0.15s ease', filter: isHovered && isInteractive ? `drop-shadow(0 0 6px ${color})` : 'none' }}
+                style={{ transition: 'all 0.15s ease', filter: isHovered ? `drop-shadow(0 0 6px ${color})` : 'none' }}
             />
             <text x={labelX} y={y + 1} textAnchor={textAnchor} dominantBaseline="middle"
                 fontSize={9} fontFamily="'JetBrains Mono', monospace"
                 fill={isHovered ? '#fff' : '#888'} style={{ transition: 'fill 0.15s ease', userSelect: 'none' }}>
                 {pin.label}
             </text>
-            {isHovered && isInteractive && (
+            {isHovered && !isPower && (
                 <g>
                     <rect x={side === 'left' ? x + 14 : x - 110} y={y - 14} width={96} height={28} rx={6}
                         fill="#16213e" stroke="#0f3460" strokeWidth={1} />
@@ -114,9 +150,11 @@ interface PlacedLEDProps {
     onSelect: (id: string) => void
     isDragging: boolean
     isSelected: boolean
+    wiringMode: boolean
+    onPinClick: (compId: string, pinId: string) => void
 }
 
-function PlacedLED({ comp, onDragStart, onSelect, isDragging, isSelected }: PlacedLEDProps) {
+function PlacedLED({ comp, onDragStart, onSelect, isDragging, isSelected, wiringMode, onPinClick }: PlacedLEDProps) {
     const r = 38
     return (
         <g
@@ -160,7 +198,13 @@ function PlacedLED({ comp, onDragStart, onSelect, isDragging, isSelected }: Plac
             <rect x={-10} y={r + 5} width={5} height={22} fill="#999" rx={1.5} />
             <rect x={5} y={r + 5} width={5} height={28} fill="#999" rx={1.5} />
 
-
+            {/* Connection Pins */}
+            <circle cx={-7.5} cy={r + 24} r={5} fill="#e5e7eb" stroke="#6b7280" strokeWidth={1.5}
+                cursor={wiringMode ? "crosshair" : "default"}
+                onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, 'cathode') }} />
+            <circle cx={7.5} cy={r + 30} r={5} fill="#e5e7eb" stroke="#6b7280" strokeWidth={1.5}
+                cursor={wiringMode ? "crosshair" : "default"}
+                onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, 'anode') }} />
         </g>
     )
 }
@@ -173,9 +217,11 @@ interface PlacedButtonProps {
     onPress: (id: string, pressed: boolean) => void
     isDragging: boolean
     isSelected: boolean
+    wiringMode: boolean
+    onPinClick: (compId: string, pinId: string) => void
 }
 
-function PlacedButton({ comp, onDragStart, onSelect, onPress, isDragging, isSelected }: PlacedButtonProps) {
+function PlacedButton({ comp, onDragStart, onSelect, onPress, isDragging, isSelected, wiringMode, onPinClick }: PlacedButtonProps) {
     const w = 90
     const h = 70
     const capColor = comp.color
@@ -224,7 +270,17 @@ function PlacedButton({ comp, onDragStart, onSelect, onPress, isDragging, isSele
             <rect x={w / 2 - 2} y={-12} width={10} height={7} fill="#999" rx={1.5} />
             <rect x={w / 2 - 2} y={6} width={10} height={7} fill="#999" rx={1.5} />
 
-
+            {/* Connection Pins */}
+            {[
+                { id: 'tl', cx: -48, cy: -8.5 },
+                { id: 'bl', cx: -48, cy: 9.5 },
+                { id: 'tr', cx: 48, cy: -8.5 },
+                { id: 'br', cx: 48, cy: 9.5 }
+            ].map(pin => (
+                <circle key={pin.id} cx={pin.cx} cy={pin.cy} r={5} fill="#e5e7eb" stroke="#6b7280" strokeWidth={1.5}
+                    cursor={wiringMode ? "crosshair" : "default"}
+                    onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, pin.id) }} />
+            ))}
 
             {/* Press area — mousedown/up for tactile press feel */}
             <rect x={-w / 2 + 8} y={-h / 2 + 8} width={w - 16} height={h - 16} fill="transparent"
@@ -244,9 +300,11 @@ interface PlacedOLEDProps {
     onSelect: (id: string) => void
     isDragging: boolean
     isSelected: boolean
+    wiringMode: boolean
+    onPinClick: (compId: string, pinId: string) => void
 }
 
-function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected }: PlacedOLEDProps) {
+function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected, wiringMode, onPinClick }: PlacedOLEDProps) {
     const w = 160
     const h = 100
     const screenW = 136
@@ -319,15 +377,21 @@ function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected }: Pla
             </rect>
 
             {/* 4 header pins at bottom */}
-            {[-30, -10, 10, 30].map((px, i) => (
-                <g key={i}>
-                    <rect x={px - 3} y={h / 2 - 3} width={6} height={16} fill="#c0a030" rx={1} />
-                    <text x={px} y={h / 2 + 22} textAnchor="middle" fontSize={6}
-                        fontFamily="'JetBrains Mono', monospace" fill="#888">
-                        {['GND', 'VCC', 'SCL', 'SDA'][i]}
-                    </text>
-                </g>
-            ))}
+            {[-30, -10, 10, 30].map((px, i) => {
+                const pinId = ['gnd', 'vcc', 'scl', 'sda'][i];
+                return (
+                    <g key={i}>
+                        <rect x={px - 3} y={h / 2 - 3} width={6} height={16} fill="#c0a030" rx={1} />
+                        <text x={px} y={h / 2 + 22} textAnchor="middle" fontSize={6}
+                            fontFamily="'JetBrains Mono', monospace" fill="#888">
+                            {pinId.toUpperCase()}
+                        </text>
+                        <circle cx={px} cy={h / 2 + 5} r={4.5} fill="#e5e7eb" stroke="#b48600" strokeWidth={1.5}
+                            cursor={wiringMode ? "crosshair" : "default"}
+                            onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, pinId) }} />
+                    </g>
+                )
+            })}
 
             {/* PCB text */}
             <text x={w / 2 - 8} y={h / 2 - 8} textAnchor="end" fontSize={6}
@@ -378,7 +442,7 @@ const MAX_ZOOM = 3
 let componentIdCounter = 0
 function nextId() { return `comp-${++componentIdCounter}` }
 
-export default function Board({ pinStates, onPinClick, selectedPin, placedComponents, onComponentsChange }: BoardProps) {
+export default function Board({ pinStates, onPinClick, selectedPin, placedComponents, onComponentsChange, wires, onWiresChange }: BoardProps) {
     const [hoveredPin, setHoveredPin] = useState<number | null>(null)
 
     // Pan & zoom
@@ -395,6 +459,11 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
     const [showPalette, setShowPalette] = useState(false)
     const [placementMode, setPlacementMode] = useState<{ type: ComponentType; color: string; label: string } | null>(null)
     const [deleteMode, setDeleteMode] = useState(false)
+
+    // Wiring mode
+    const [wiringMode, setWiringMode] = useState(false)
+    const [wiringFrom, setWiringFrom] = useState<{ pin: number; x: number; y: number } | null>(null)
+    const [wiringMouse, setWiringMouse] = useState<{ x: number; y: number } | null>(null)
 
     // Dragging & selecting — '__board__' is the special ID for the board itself
     const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -536,16 +605,97 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                 onComponentsChange(placedComponents.filter(c => c.id !== selectedComponentId))
                 setSelectedComponentId(null)
             }
-            // Escape to cancel placement mode, delete mode, or deselect
+            // Escape to cancel placement mode, delete mode, wiring mode, or deselect
             if (e.key === 'Escape') {
-                if (deleteMode) setDeleteMode(false)
+                if (wiringFrom) { setWiringFrom(null); setWiringMouse(null) }
+                else if (wiringMode) setWiringMode(false)
+                else if (deleteMode) setDeleteMode(false)
                 else if (placementMode) setPlacementMode(null)
                 else setSelectedComponentId(null)
             }
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [selectedComponentId, onComponentsChange, placedComponents, placementMode, deleteMode])
+    }, [selectedComponentId, onComponentsChange, placedComponents, placementMode, deleteMode, wiringFrom, wiringMode])
+
+    // ===== Pin position helper =====
+    const getPinPosition = useCallback((gpio: number): { x: number; y: number } | null => {
+        for (let i = 0; i < LEFT_PINS.length; i++) {
+            if (LEFT_PINS[i].gpio === gpio) {
+                return { x: boardOffset.x + LEFT_PIN_X, y: boardOffset.y + PIN_START_Y + i * PIN_SPACING }
+            }
+        }
+        for (let i = 0; i < RIGHT_PINS.length; i++) {
+            if (RIGHT_PINS[i].gpio === gpio) {
+                return { x: boardOffset.x + RIGHT_PIN_X, y: boardOffset.y + PIN_START_Y + i * PIN_SPACING }
+            }
+        }
+        return null
+    }, [boardOffset])
+
+    // ===== Wire pin click handler =====
+    const handleWirePinClick = useCallback((gpio: number) => {
+        if (!wiringMode) return false
+        const pinPos = getPinPosition(gpio)
+        if (!pinPos) return false
+
+        if (!wiringFrom) {
+            // Start wiring from this pin
+            setWiringFrom({ pin: gpio, x: pinPos.x, y: pinPos.y })
+            return true
+        }
+        // If clicking same pin, cancel
+        if (wiringFrom.pin === gpio) {
+            setWiringFrom(null)
+            setWiringMouse(null)
+            return true
+        }
+        // Can't wire pin to pin — need to click a component
+        return true
+    }, [wiringMode, wiringFrom, getPinPosition])
+
+    // ===== Wire component PIN click handler =====
+    const handleWireComponentPinClick = useCallback((compId: string, pinId: string) => {
+        if (!wiringMode || !wiringFrom) return false
+        // Check if wire already exists
+        const exists = wires.some(w => w.fromPin === wiringFrom.pin && w.toComponentId === compId && w.toComponentPin === pinId)
+        if (exists) return true
+        // Create new wire
+        const newWire: Wire = {
+            id: `wire-${Date.now()}`,
+            fromPin: wiringFrom.pin,
+            toComponentId: compId,
+            toComponentPin: pinId,
+            color: WIRE_COLORS[wires.length % WIRE_COLORS.length],
+        }
+        onWiresChange([...wires, newWire])
+        setWiringFrom(null)
+        setWiringMouse(null)
+        return true
+    }, [wiringMode, wiringFrom, wires, onWiresChange])
+
+    // ===== Track mouse during wiring for preview =====
+    const handleWiringMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+        if (wiringFrom) {
+            const pos = screenToSVG(e.clientX, e.clientY)
+            setWiringMouse(pos)
+        }
+    }, [wiringFrom, screenToSVG])
+
+    // Override onPinClick to intercept wiring mode
+    const handlePinClickWithWire = useCallback((gpio: number) => {
+        if (handleWirePinClick(gpio)) return
+        onPinClick?.(gpio)
+    }, [handleWirePinClick, onPinClick])
+
+    // ===== Orthogonal wire path (Köşeli) =====
+    const wirePath = useCallback((x1: number, y1: number, x2: number, y2: number) => {
+        const dx = Math.abs(x2 - x1)
+        const dy = Math.abs(y2 - y1)
+        if (dx < 5 || dy < 5) return `M ${x1} ${y1} L ${x2} ${y2}`
+        const midX = x1 + (x2 - x1) / 2
+        return `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`
+    }, [])
 
     // Prevent default wheel on container
     useEffect(() => {
@@ -557,7 +707,7 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
     }, [])
 
     // Determine cursor based on mode
-    const svgCursor = deleteMode ? 'not-allowed' : placementMode ? 'crosshair' : draggingId ? 'grabbing' : 'grab'
+    const svgCursor = wiringFrom ? 'crosshair' : wiringMode ? 'crosshair' : deleteMode ? 'not-allowed' : placementMode ? 'crosshair' : draggingId ? 'grabbing' : 'grab'
 
     return (
         <div className="board-container">
@@ -586,6 +736,22 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                     title={deleteMode ? 'Cancel delete mode' : 'Delete components'}
                 >
                     🗑
+                </button>
+
+                {/* Wire mode toggle */}
+                <button
+                    className={`board-add__btn board-add__btn--delete ${wiringMode ? 'board-add__btn--active-wire' : ''}`}
+                    onClick={() => {
+                        setWiringMode(!wiringMode)
+                        setWiringFrom(null)
+                        setWiringMouse(null)
+                        setDeleteMode(false)
+                        setPlacementMode(null)
+                        setShowPalette(false)
+                    }}
+                    title={wiringMode ? 'Cancel wiring' : 'Draw wires'}
+                >
+                    🔗
                 </button>
 
                 {/* Palette dropdown */}
@@ -623,6 +789,14 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                 </div>
             )}
 
+            {/* Wiring mode indicator */}
+            {wiringMode && (
+                <div className="board-placement-hint board-placement-hint--wire">
+                    🔗 {wiringFrom ? 'Click a component pin to connect' : 'Click an ESP board pin to start wiring'}
+                    <button className="board-placement-hint__cancel" onClick={() => { setWiringMode(false); setWiringFrom(null); setWiringMouse(null) }}>Cancel (Esc)</button>
+                </div>
+            )}
+
             {/* Zoom controls */}
             <div className="board-controls">
                 <button className="board-controls__btn" onClick={() => setViewBox(vb => {
@@ -646,7 +820,7 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                 xmlns="http://www.w3.org/2000/svg"
                 onWheel={handleWheel}
                 onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
+                onMouseMove={(e) => { handleMouseMove(e); handleWiringMouseMove(e) }}
                 onMouseUp={handleMouseUp}
                 onMouseLeave={handleMouseUp}
                 onClick={handleSVGClick}
@@ -701,12 +875,12 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                     {/* Pins */}
                     {LEFT_PINS.map((pin, i) => (
                         <PinCircle key={`left-${i}`} pin={pin} x={LEFT_PIN_X} y={PIN_START_Y + i * PIN_SPACING}
-                            side="left" pinStates={pinStates} selectedPin={selectedPin} onPinClick={onPinClick}
+                            side="left" pinStates={pinStates} selectedPin={selectedPin} onPinClick={handlePinClickWithWire}
                             hoveredPin={hoveredPin} onHover={setHoveredPin} />
                     ))}
                     {RIGHT_PINS.map((pin, i) => (
                         <PinCircle key={`right-${i}`} pin={pin} x={RIGHT_PIN_X} y={PIN_START_Y + i * PIN_SPACING}
-                            side="right" pinStates={pinStates} selectedPin={selectedPin} onPinClick={onPinClick}
+                            side="right" pinStates={pinStates} selectedPin={selectedPin} onPinClick={handlePinClickWithWire}
                             hoveredPin={hoveredPin} onHover={setHoveredPin} />
                     ))}
 
@@ -716,43 +890,71 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                     </text>
                 </g>
 
+                {/* Wires */}
+                {wires.map(wire => {
+                    const pinPos = getPinPosition(wire.fromPin)
+                    const comp = placedComponents.find(c => c.id === wire.toComponentId)
+                    if (!pinPos || !comp) return null
+
+                    const offset = getComponentPinOffset(comp.type, wire.toComponentPin)
+                    const endX = comp.x + offset.x
+                    const endY = comp.y + offset.y
+                    const path = wirePath(pinPos.x, pinPos.y, endX, endY)
+
+                    return (
+                        <g key={wire.id}
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                if (deleteMode) {
+                                    onWiresChange(wires.filter(w => w.id !== wire.id))
+                                }
+                            }}
+                            style={{ cursor: deleteMode ? 'not-allowed' : 'default' }}
+                        >
+                            {/* Wire shadow */}
+                            <path d={path} fill="none" stroke="#000" strokeWidth={4} opacity={0.3} strokeLinecap="round" strokeLinejoin="round" />
+                            {/* Wire body */}
+                            <path d={path} fill="none" stroke={wire.color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                            {/* Wire endpoints */}
+                            <circle cx={pinPos.x} cy={pinPos.y} r={4} fill={wire.color} stroke="#000" strokeWidth={1} />
+                            <circle cx={endX} cy={endY} r={4} fill={wire.color} stroke="#000" strokeWidth={1} />
+                        </g>
+                    )
+                })}
+
+                {/* Wire preview while drawing */}
+                {wiringFrom && wiringMouse && (
+                    <path
+                        d={wirePath(wiringFrom.x, wiringFrom.y, wiringMouse.x, wiringMouse.y)}
+                        fill="none" stroke="#4ecca3" strokeWidth={2} strokeDasharray="6 4" opacity={0.7} strokeLinecap="round" strokeLinejoin="round"
+                    />
+                )}
+
                 {/* Placed Components (independent of board position) */}
                 {placedComponents.map(comp => {
-                    if (comp.type === 'led') return (
-                        <PlacedLED
-                            key={comp.id}
-                            comp={comp}
-                            onDragStart={deleteMode ? () => { } : handleComponentDragStart}
-                            onSelect={handleComponentSelect}
-                            isDragging={draggingId === comp.id}
-                            isSelected={selectedComponentId === comp.id}
-                        />
-                    )
+                    const commonProps = {
+                        key: comp.id,
+                        comp,
+                        onDragStart: deleteMode ? () => { } : handleComponentDragStart,
+                        onSelect: handleComponentSelect,
+                        isDragging: draggingId === comp.id,
+                        isSelected: selectedComponentId === comp.id,
+                        wiringMode,
+                        onPinClick: handleWireComponentPinClick
+                    };
+
+                    if (comp.type === 'led') return <PlacedLED {...commonProps} />
                     if (comp.type === 'button') return (
                         <PlacedButton
-                            key={comp.id}
-                            comp={comp}
-                            onDragStart={deleteMode ? () => { } : handleComponentDragStart}
-                            onSelect={handleComponentSelect}
+                            {...commonProps}
                             onPress={deleteMode ? () => { } : (id, pressed) => {
                                 onComponentsChange(placedComponents.map(c =>
                                     c.id === id ? { ...c, on: pressed } : c
                                 ))
                             }}
-                            isDragging={draggingId === comp.id}
-                            isSelected={selectedComponentId === comp.id}
                         />
                     )
-                    if (comp.type === 'oled') return (
-                        <PlacedOLED
-                            key={comp.id}
-                            comp={comp}
-                            onDragStart={deleteMode ? () => { } : handleComponentDragStart}
-                            onSelect={handleComponentSelect}
-                            isDragging={draggingId === comp.id}
-                            isSelected={selectedComponentId === comp.id}
-                        />
-                    )
+                    if (comp.type === 'oled') return <PlacedOLED {...commonProps} />
                     return null
                 })}
             </svg>
