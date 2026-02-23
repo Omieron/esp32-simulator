@@ -1,0 +1,36 @@
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+esp32-simulator
+
+# Test binary & coverage
+*.test
+*.out
+coverage.html
+
+# Go workspace & vendor
+vendor/
+go.work
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Frontend build output (for future React build)
+frontend/dist/
+frontend/build/
+frontend/node_modules/
+
+# Temporary files
+tmp/
+*.log
