@@ -1,11 +1,15 @@
+import { useState } from 'react'
+import MonacoEditor, { DEFAULT_SKETCH } from './components/MonacoEditor'
+import './components/MonacoEditor.css'
 import './App.css'
 
 /**
  * Main application layout for the ESP32-S3 Simulator.
  * Uses a 2-panel design: left = code editor, right = board visualization.
- * Components will be added incrementally in subsequent steps.
  */
 function App() {
+  const [code, setCode] = useState(DEFAULT_SKETCH)
+
   return (
     <div className="app">
       {/* ===== Header ===== */}
@@ -19,17 +23,18 @@ function App() {
 
       {/* ===== Main 2-Panel Layout ===== */}
       <main className="main">
-        {/* Left Panel — Code Editor (Step 2) */}
+        {/* Left Panel — Code Editor */}
         <section className="panel">
-          <div className="panel__header">📝 Code Editor</div>
-          <div className="panel__content">
-            <div className="placeholder">
-              <div className="placeholder__icon">📝</div>
-              <p>Monaco Editor will be here</p>
-              <p style={{ fontSize: '0.75rem', marginTop: '4px' }}>
-                (Step 2 — MonacoEditor.tsx)
-              </p>
+          <div className="panel__header">
+            <span>📝 Code Editor</span>
+            <div className="editor-toolbar" style={{ display: 'inline-flex', marginLeft: '12px', padding: 0, background: 'transparent', border: 'none' }}>
+              <button className="editor-toolbar__btn editor-toolbar__btn--primary">
+                ▶ Upload & Run
+              </button>
             </div>
+          </div>
+          <div className="panel__content" style={{ padding: 0 }}>
+            <MonacoEditor code={code} onChange={setCode} />
           </div>
         </section>
 
@@ -51,7 +56,7 @@ function App() {
       {/* ===== Footer / Status Bar ===== */}
       <footer className="footer">
         <span>ESP32-S3 Web Simulator v0.1</span>
-        <span>Ready</span>
+        <span>{code.split('\n').length} lines</span>
       </footer>
     </div>
   )
