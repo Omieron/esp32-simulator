@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"path/filepath"
 
 	"github.com/Omieron/esp32-simulator/simulator"
 	"github.com/gorilla/websocket"
@@ -59,18 +58,11 @@ func NewServer(gpio *simulator.GPIOState) *Server {
 
 // RegisterRoutes wires up all HTTP routes on the provided mux.
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/", s.HandleIndex)
-	mux.HandleFunc("/ws", s.HandleWS)
-}
+	// Serve static files from the React build output.
+	fs := http.FileServer(http.Dir("frontend/dist"))
+	mux.Handle("/", fs)
 
-// HandleIndex serves the frontend index.html page.
-func (s *Server) HandleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-	indexPath := filepath.Join("frontend", "index.html")
-	http.ServeFile(w, r, indexPath)
+	mux.HandleFunc("/ws", s.HandleWS)
 }
 
 // modeString converts PinMode to a string.
