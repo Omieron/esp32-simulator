@@ -1,83 +1,23 @@
 <!DOCTYPE html>
 <html lang="tr">
+
 <head>
   <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Web-based ESP32-S3 simulator with code editor and visual board" />
   <title>ESP32-S3 Simulator</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #1a1a2e;
-      color: #e0e0e0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-    }
-    .container {
-      text-align: center;
-      padding: 3rem;
-      background: #16213e;
-      border-radius: 16px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-      border: 1px solid #0f3460;
-    }
-    h1 {
-      font-size: 2rem;
-      background: linear-gradient(135deg, #e94560, #533483);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      margin-bottom: 0.5rem;
-    }
-    #status {
-      margin-top: 1rem;
-      font-size: 0.9rem;
-      color: #888;
-    }
-    #status.connected { color: #4ecca3; }
-    #status.error     { color: #e94560; }
-  </style>
+  <!-- Google Fonts: Inter + JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
 </head>
+
 <body>
-  <div class="container">
-    <h1>ESP32 Simulator - Merhaba</h1>
-    <p>Web tabanlı ESP32-S3 simülatörüne hoş geldiniz.</p>
-    <p id="status">WebSocket bağlanıyor…</p>
-  </div>
-
-  <script>
-    (function () {
-      const statusEl = document.getElementById('status');
-
-      // Determine WebSocket URL based on the current page location.
-      const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl   = wsProto + '//' + location.host + '/ws';
-
-      const ws = new WebSocket(wsUrl);
-
-      ws.onopen = function () {
-        console.log('WebSocket connected to', wsUrl);
-        statusEl.textContent = 'WebSocket bağlandı ✓';
-        statusEl.className   = 'connected';
-      };
-
-      ws.onmessage = function (event) {
-        console.log('WebSocket message:', event.data);
-      };
-
-      ws.onerror = function (err) {
-        console.error('WebSocket error:', err);
-        statusEl.textContent = 'WebSocket hatası ✗';
-        statusEl.className   = 'error';
-      };
-
-      ws.onclose = function () {
-        console.log('WebSocket closed');
-        statusEl.textContent = 'WebSocket kapandı';
-        statusEl.className   = 'error';
-      };
-    })();
-  </script>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
 </body>
+
 </html>
