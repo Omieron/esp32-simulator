@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import MonacoEditor, { DEFAULT_SKETCH } from './components/MonacoEditor'
 import Board from './components/Board'
 import type { PlacedComponent } from './components/Board'
-import type { PinState } from './components/pinDefinitions'
+import useWebSocket from './hooks/useWebSocket'
 import './components/MonacoEditor.css'
 import './components/Board.css'
 import './App.css'
@@ -15,22 +15,35 @@ function App() {
   const [code, setCode] = useState(DEFAULT_SKETCH)
   const [selectedPin, setSelectedPin] = useState<number | null>(null)
 
-  // Pin states (all INPUT / LOW by default)
-  const [pinStates] = useState<Map<number, PinState>>(() => {
-    const map = new Map<number, PinState>()
-    for (let i = 0; i < 49; i++) {
-      map.set(i, { number: i, mode: 'INPUT', state: 'LOW' })
-    }
-    return map
-  })
+  // WebSocket connection to Go backend
+  const ws = useWebSocket()
 
   // Placed components on the board
   const [placedComponents, setPlacedComponents] = useState<PlacedComponent[]>([])
 
   const handlePinClick = useCallback((gpio: number) => {
     setSelectedPin((prev) => (prev === gpio ? null : gpio))
-    console.log(`Pin clicked: GPIO${gpio}`, pinStates.get(gpio))
-  }, [pinStates])
+    console.log(`Pin clicked: GPIO${gpio}`, ws.pinStates.get(gpio))
+  }, [ws.pinStates])
+
+  const handleUpload = useCallback(() => {
+    ws.uploadCode(code)
+  }, [ws, code])
+
+  const handleStop = useCallback(() => {
+    ws.stopExecution()
+  }, [ws])
+
+  // Status dot color
+  const statusColor =
+    ws.status === 'connected' ? 'var(--accent-success)' :
+      ws.status === 'connecting' ? 'var(--accent-warning, #f0c040)' :
+        'var(--text-muted)'
+
+  const statusLabel =
+    ws.status === 'connected' ? 'Connected' :
+      ws.status === 'connecting' ? 'Connecting…' :
+        ws.status === 'error' ? 'Error' : 'Disconnected'
 
   return (
     <div className="app">
@@ -38,8 +51,8 @@ function App() {
       <header className="header">
         <h1 className="header__title">⚡ ESP32-S3 Simulator</h1>
         <div className="header__status">
-          <span className="header__status-dot"></span>
-          <span>Disconnected</span>
+          <span className="header__status-dot" style={{ background: statusColor }}></span>
+          <span>{statusLabel}</span>
         </div>
       </header>
 
@@ -49,15 +62,52 @@ function App() {
         <section className="panel">
           <div className="panel__header">
             <span>📝 Code Editor</span>
-            <div className="editor-toolbar" style={{ display: 'inline-flex', marginLeft: '12px', padding: 0, background: 'transparent', border: 'none' }}>
-              <button className="editor-toolbar__btn editor-toolbar__btn--primary">
-                ▶ Upload & Run
-              </button>
+            <div className="editor-toolbar" style={{ display: 'inline-flex', marginLeft: '12px', padding: 0, background: 'transparent', border: 'none', gap: '6px' }}>
+              {!ws.isRunning ? (
+                <button
+                  className="editor-toolbar__btn editor-toolbar__btn--primary"
+                  onClick={handleUpload}
+                  disabled={ws.status !== 'connected'}
+                  style={{ opacity: ws.status !== 'connected' ? 0.5 : 1 }}
+                >
+                  ▶ Upload &amp; Run
+                </button>
+              ) : (
+                <button
+                  className="editor-toolbar__btn"
+                  onClick={handleStop}
+                  style={{ background: '#e94560', color: 'white', border: '1px solid #e94560' }}
+                >
+                  ⏹ Stop
+                </button>
+              )}
             </div>
           </div>
           <div className="panel__content" style={{ padding: 0 }}>
             <MonacoEditor code={code} onChange={setCode} />
           </div>
+
+          {/* Serial Output */}
+          {ws.serialOutput.length > 0 && (
+            <div className="serial-monitor">
+              <div className="serial-monitor__header">
+                <span>📟 Serial Monitor</span>
+                <button className="serial-monitor__clear" onClick={ws.clearSerial}>Clear</button>
+              </div>
+              <div className="serial-monitor__output">
+                {ws.serialOutput.map((line, i) => (
+                  <div key={i} className="serial-monitor__line">{line}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Error display */}
+          {ws.lastError && (
+            <div className="compile-error">
+              <span>❌ {ws.lastError}</span>
+            </div>
+          )}
         </section>
 
         {/* Right Panel — Board */}
@@ -77,7 +127,7 @@ function App() {
           </div>
           <div className="panel__content" style={{ padding: 0 }}>
             <Board
-              pinStates={pinStates}
+              pinStates={ws.pinStates}
               onPinClick={handlePinClick}
               selectedPin={selectedPin}
               placedComponents={placedComponents}
