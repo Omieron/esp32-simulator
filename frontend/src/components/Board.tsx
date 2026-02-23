@@ -4,7 +4,7 @@ import type { PinState, PinDefinition } from './pinDefinitions'
 
 // ===== Placed Component Types =====
 
-export type ComponentType = 'led'
+export type ComponentType = 'led' | 'button'
 
 export interface PlacedComponent {
     id: string
@@ -13,7 +13,7 @@ export interface PlacedComponent {
     y: number
     color: string
     label: string
-    on: boolean
+    on: boolean  // LED: lit state, Button: pressed state
 }
 
 // ===== Props Interface =====
@@ -166,13 +166,105 @@ function PlacedLED({ comp, onDragStart, onSelect, isDragging, isSelected }: Plac
     )
 }
 
-// ===== Component Palette Items =====
-const PALETTE_ITEMS: { type: ComponentType; label: string; icon: string; defaultColor: string }[] = [
-    { type: 'led', label: 'Red LED', icon: '🔴', defaultColor: '#ff3333' },
-    { type: 'led', label: 'Green LED', icon: '🟢', defaultColor: '#33ff33' },
-    { type: 'led', label: 'Blue LED', icon: '🔵', defaultColor: '#3388ff' },
-    { type: 'led', label: 'Yellow LED', icon: '🟡', defaultColor: '#ffdd33' },
-    { type: 'led', label: 'White LED', icon: '⚪', defaultColor: '#ffffff' },
+// ===== Placed Button SVG Element =====
+interface PlacedButtonProps {
+    comp: PlacedComponent
+    onDragStart: (id: string, e: React.MouseEvent) => void
+    onSelect: (id: string) => void
+    onPress: (id: string, pressed: boolean) => void
+    isDragging: boolean
+    isSelected: boolean
+}
+
+function PlacedButton({ comp, onDragStart, onSelect, onPress, isDragging, isSelected }: PlacedButtonProps) {
+    const w = 52
+    const h = 40
+    const capColor = comp.color
+
+    return (
+        <g
+            transform={`translate(${comp.x}, ${comp.y})`}
+            style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+            onMouseDown={(e) => { e.stopPropagation(); onSelect(comp.id); onDragStart(comp.id, e) }}
+        >
+            {/* Selection ring */}
+            {isSelected && (
+                <rect x={-w / 2 - 6} y={-h / 2 - 6} width={w + 12} height={h + 12} rx={6}
+                    fill="none" stroke="#3b82f6" strokeWidth={2}
+                    strokeDasharray="5 3" opacity={0.8}>
+                    <animate attributeName="stroke-dashoffset" values="0;16" dur="1s" repeatCount="indefinite" />
+                </rect>
+            )}
+
+            {/* Button housing (black body) */}
+            <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={4}
+                fill="#1a1a1a" stroke="#444" strokeWidth={2} />
+
+            {/* Inner cavity */}
+            <rect x={-w / 2 + 5} y={-h / 2 + 5} width={w - 10} height={h - 10} rx={3}
+                fill="#111" />
+
+            {/* Button cap (plunger) */}
+            <rect
+                x={-w / 2 + 8} y={comp.on ? -h / 2 + 10 : -h / 2 + 7}
+                width={w - 16} height={h - 16} rx={3}
+                fill={capColor}
+                stroke={comp.on ? '#fff3' : '#0003'}
+                strokeWidth={1.5}
+                opacity={comp.on ? 1 : 0.85}
+            />
+            {/* Cap highlight */}
+            {!comp.on && (
+                <rect x={-w / 2 + 11} y={-h / 2 + 9} width={w - 22} height={4} rx={2}
+                    fill="white" opacity={0.2} />
+            )}
+
+            {/* 4 metal pins */}
+            <rect x={-w / 2 - 5} y={-7} width={6} height={4} fill="#999" rx={1} />
+            <rect x={-w / 2 - 5} y={4} width={6} height={4} fill="#999" rx={1} />
+            <rect x={w / 2 - 1} y={-7} width={6} height={4} fill="#999" rx={1} />
+            <rect x={w / 2 - 1} y={4} width={6} height={4} fill="#999" rx={1} />
+
+            {/* Label */}
+            <text x={0} y={-h / 2 - 10} textAnchor="middle" fontSize={9}
+                fontFamily="'JetBrains Mono', monospace" fill="#ccc">{comp.label}</text>
+
+            {/* Press area — mousedown/up for tactile press feel */}
+            <rect x={-w / 2 + 5} y={-h / 2 + 5} width={w - 10} height={h - 10} fill="transparent"
+                style={{ cursor: 'pointer' }}
+                onMouseDown={(e) => { e.stopPropagation(); onPress(comp.id, true) }}
+                onMouseUp={() => onPress(comp.id, false)}
+                onMouseLeave={() => { if (comp.on) onPress(comp.id, false) }}
+            />
+        </g>
+    )
+}
+
+// ===== Component Palette Items (grouped by category) =====
+interface PaletteCategory {
+    title: string
+    items: { type: ComponentType; label: string; icon: string; defaultColor: string }[]
+}
+
+const PALETTE_CATEGORIES: PaletteCategory[] = [
+    {
+        title: '💡 LEDs',
+        items: [
+            { type: 'led', label: 'Red LED', icon: '🔴', defaultColor: '#ff3333' },
+            { type: 'led', label: 'Green LED', icon: '🟢', defaultColor: '#33ff33' },
+            { type: 'led', label: 'Blue LED', icon: '🔵', defaultColor: '#3388ff' },
+            { type: 'led', label: 'Yellow LED', icon: '🟡', defaultColor: '#ffdd33' },
+            { type: 'led', label: 'White LED', icon: '⚪', defaultColor: '#ffffff' },
+        ],
+    },
+    {
+        title: '🔘 Buttons',
+        items: [
+            { type: 'button', label: 'Push Button', icon: '⬛', defaultColor: '#555' },
+            { type: 'button', label: 'Red Button', icon: '🟥', defaultColor: '#cc3333' },
+            { type: 'button', label: 'Blue Button', icon: '🟦', defaultColor: '#3366cc' },
+        ],
+    },
 ]
 
 // ===== Main Board Component =====
@@ -309,7 +401,7 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
 
 
     // ===== Select palette item =====
-    const handlePaletteSelect = useCallback((item: typeof PALETTE_ITEMS[0]) => {
+    const handlePaletteSelect = useCallback((item: PaletteCategory['items'][0]) => {
         setPlacementMode({ type: item.type, color: item.defaultColor, label: item.label })
         setShowPalette(false)
     }, [])
@@ -374,11 +466,16 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                 {showPalette && (
                     <div className="board-palette">
                         <div className="board-palette__title">Add Component</div>
-                        {PALETTE_ITEMS.map((item, i) => (
-                            <button key={i} className="board-palette__item" onClick={() => handlePaletteSelect(item)}>
-                                <span>{item.icon}</span>
-                                <span>{item.label}</span>
-                            </button>
+                        {PALETTE_CATEGORIES.map((cat, ci) => (
+                            <div key={ci} className="board-palette__category">
+                                <div className="board-palette__category-title">{cat.title}</div>
+                                {cat.items.map((item, i) => (
+                                    <button key={i} className="board-palette__item" onClick={() => handlePaletteSelect(item)}>
+                                        <span>{item.icon}</span>
+                                        <span>{item.label}</span>
+                                    </button>
+                                ))}
+                            </div>
                         ))}
                     </div>
                 )}
@@ -486,8 +583,8 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                 </g>
 
                 {/* Placed Components (independent of board position) */}
-                {placedComponents.map(comp => (
-                    comp.type === 'led' && (
+                {placedComponents.map(comp => {
+                    if (comp.type === 'led') return (
                         <PlacedLED
                             key={comp.id}
                             comp={comp}
@@ -497,7 +594,23 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                             isSelected={selectedComponentId === comp.id}
                         />
                     )
-                ))}
+                    if (comp.type === 'button') return (
+                        <PlacedButton
+                            key={comp.id}
+                            comp={comp}
+                            onDragStart={handleComponentDragStart}
+                            onSelect={setSelectedComponentId}
+                            onPress={(id, pressed) => {
+                                onComponentsChange(placedComponents.map(c =>
+                                    c.id === id ? { ...c, on: pressed } : c
+                                ))
+                            }}
+                            isDragging={draggingId === comp.id}
+                            isSelected={selectedComponentId === comp.id}
+                        />
+                    )
+                    return null
+                })}
             </svg>
         </div>
     )

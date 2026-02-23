@@ -102,6 +102,23 @@
     color: white;
 }
 
+.board-palette__category {
+    margin-bottom: 2px;
+}
+
+.board-palette__category+.board-palette__category {
+    border-top: 1px solid var(--border-color);
+    margin-top: 4px;
+    padding-top: 4px;
+}
+
+.board-palette__category-title {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    padding: 4px 10px 2px;
+    letter-spacing: 0.04em;
+}
+
 /* ===== Placement Mode Hint ===== */
 .board-placement-hint {
     position: absolute;
