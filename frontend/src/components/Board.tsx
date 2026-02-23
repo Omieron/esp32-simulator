@@ -4,7 +4,7 @@ import type { PinState, PinDefinition } from './pinDefinitions'
 
 // ===== Placed Component Types =====
 
-export type ComponentType = 'led' | 'button'
+export type ComponentType = 'led' | 'button' | 'oled'
 
 export interface PlacedComponent {
     id: string
@@ -13,7 +13,8 @@ export interface PlacedComponent {
     y: number
     color: string
     label: string
-    on: boolean  // LED: lit state, Button: pressed state
+    on: boolean  // LED: lit state, Button: pressed state, OLED: power state
+    screenText?: string  // OLED: text to display
 }
 
 // ===== Props Interface =====
@@ -236,6 +237,105 @@ function PlacedButton({ comp, onDragStart, onSelect, onPress, isDragging, isSele
     )
 }
 
+// ===== Placed OLED Display SVG Element =====
+interface PlacedOLEDProps {
+    comp: PlacedComponent
+    onDragStart: (id: string, e: React.MouseEvent) => void
+    onSelect: (id: string) => void
+    isDragging: boolean
+    isSelected: boolean
+}
+
+function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected }: PlacedOLEDProps) {
+    const w = 90
+    const h = 56
+    const screenW = 76
+    const screenH = 36
+    const screenX = -screenW / 2
+    const screenY = -h / 2 + 6
+
+    return (
+        <g
+            transform={`translate(${comp.x}, ${comp.y})`}
+            style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+            onMouseDown={(e) => { e.stopPropagation(); onSelect(comp.id); onDragStart(comp.id, e) }}
+        >
+            {/* Selection ring */}
+            {isSelected && (
+                <rect x={-w / 2 - 6} y={-h / 2 - 6} width={w + 12} height={h + 12} rx={6}
+                    fill="none" stroke="#3b82f6" strokeWidth={2}
+                    strokeDasharray="5 3" opacity={0.8}>
+                    <animate attributeName="stroke-dashoffset" values="0;16" dur="1s" repeatCount="indefinite" />
+                </rect>
+            )}
+
+            {/* PCB board (blue) */}
+            <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={3}
+                fill="#0a3d6b" stroke="#0d4f8a" strokeWidth={1.5} />
+
+            {/* PCB corner holes */}
+            <circle cx={-w / 2 + 4} cy={-h / 2 + 4} r={1.5} fill="none" stroke="#0d4f8a" strokeWidth={0.8} />
+            <circle cx={w / 2 - 4} cy={-h / 2 + 4} r={1.5} fill="none" stroke="#0d4f8a" strokeWidth={0.8} />
+            <circle cx={-w / 2 + 4} cy={h / 2 - 4} r={1.5} fill="none" stroke="#0d4f8a" strokeWidth={0.8} />
+            <circle cx={w / 2 - 4} cy={h / 2 - 4} r={1.5} fill="none" stroke="#0d4f8a" strokeWidth={0.8} />
+
+            {/* Screen bezel (black frame) */}
+            <rect x={screenX - 2} y={screenY - 2} width={screenW + 4} height={screenH + 4} rx={2}
+                fill="#111" stroke="#333" strokeWidth={0.8} />
+
+            {/* Screen area */}
+            <rect x={screenX} y={screenY} width={screenW} height={screenH} rx={1}
+                fill="#050505" />
+
+            {/* Screen pixel grid texture */}
+            <defs>
+                <pattern id={`oled-grid-${comp.id}`} width="3" height="3" patternUnits="userSpaceOnUse">
+                    <rect width="2.5" height="2.5" fill="#0a0a0a" />
+                </pattern>
+            </defs>
+            <rect x={screenX} y={screenY} width={screenW} height={screenH} rx={1}
+                fill={`url(#oled-grid-${comp.id})`} opacity={0.4} />
+
+            {/* Screen content — shows text if powered */}
+            {comp.on && (
+                <>
+                    {/* Subtle glow */}
+                    <rect x={screenX} y={screenY} width={screenW} height={screenH} rx={1}
+                        fill="#00aaff" opacity={0.03} />
+                    <text x={0} y={screenY + 14} textAnchor="middle" fontSize={7}
+                        fontFamily="'JetBrains Mono', monospace" fill="#00ccff" opacity={0.9}>
+                        {comp.screenText || 'Hello ESP32!'}
+                    </text>
+                    <text x={0} y={screenY + 26} textAnchor="middle" fontSize={5}
+                        fontFamily="'JetBrains Mono', monospace" fill="#00ccff" opacity={0.5}>
+                        SSD1306 128x64
+                    </text>
+                </>
+            )}
+
+            {/* Scan line effect */}
+            <rect x={screenX} y={screenY} width={screenW} height={1} fill="#ffffff" opacity={0.03}>
+                <animate attributeName="y" values={`${screenY};${screenY + screenH}`} dur="3s" repeatCount="indefinite" />
+            </rect>
+
+            {/* 4 header pins at bottom */}
+            {[-18, -6, 6, 18].map((px, i) => (
+                <g key={i}>
+                    <rect x={px - 2} y={h / 2 - 2} width={4} height={10} fill="#c0a030" rx={0.5} />
+                    <text x={px} y={h / 2 + 16} textAnchor="middle" fontSize={3.5}
+                        fontFamily="'JetBrains Mono', monospace" fill="#888">
+                        {['GND', 'VCC', 'SCL', 'SDA'][i]}
+                    </text>
+                </g>
+            ))}
+
+            {/* PCB text */}
+            <text x={w / 2 - 5} y={h / 2 - 5} textAnchor="end" fontSize={3.5}
+                fontFamily="'Inter', sans-serif" fill="#1a6fb0" opacity={0.8}>SSD1306</text>
+        </g>
+    )
+}
+
 // ===== Component Palette Items (grouped by category) =====
 interface PaletteCategory {
     title: string
@@ -259,6 +359,12 @@ const PALETTE_CATEGORIES: PaletteCategory[] = [
             { type: 'button', label: 'Push Button', icon: '⬛', defaultColor: '#555' },
             { type: 'button', label: 'Red Button', icon: '🟥', defaultColor: '#cc3333' },
             { type: 'button', label: 'Blue Button', icon: '🟦', defaultColor: '#3366cc' },
+        ],
+    },
+    {
+        title: '📺 Displays',
+        items: [
+            { type: 'oled', label: '0.96" OLED', icon: '🖥️', defaultColor: '#0a3d6b' },
         ],
     },
 ]
@@ -633,6 +739,16 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                                     c.id === id ? { ...c, on: pressed } : c
                                 ))
                             }}
+                            isDragging={draggingId === comp.id}
+                            isSelected={selectedComponentId === comp.id}
+                        />
+                    )
+                    if (comp.type === 'oled') return (
+                        <PlacedOLED
+                            key={comp.id}
+                            comp={comp}
+                            onDragStart={deleteMode ? () => { } : handleComponentDragStart}
+                            onSelect={handleComponentSelect}
                             isDragging={draggingId === comp.id}
                             isSelected={selectedComponentId === comp.id}
                         />
