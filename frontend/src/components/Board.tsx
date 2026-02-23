@@ -25,6 +25,7 @@ export interface Wire {
     toComponentId: string // Component ID
     toComponentPin: string // Component Pin identifier
     color: string         // Wire color
+    waypoints?: { x: number; y: number }[] // Bend points
 }
 
 const WIRE_COLORS = ['#e94560', '#4ecca3', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
@@ -464,6 +465,7 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
     const [wiringMode, setWiringMode] = useState(false)
     const [wiringFrom, setWiringFrom] = useState<{ pin: number; x: number; y: number } | null>(null)
     const [wiringMouse, setWiringMouse] = useState<{ x: number; y: number } | null>(null)
+    const [draggingWaypoint, setDraggingWaypoint] = useState<{ wireId: string; index: number } | null>(null)
 
     // Dragging & selecting — '__board__' is the special ID for the board itself
     const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -507,6 +509,18 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
     }, [placementMode, draggingId])
 
     const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+        if (draggingWaypoint) {
+            const pos = screenToSVG(e.clientX, e.clientY)
+            onWiresChange(wires.map(w => {
+                if (w.id === draggingWaypoint.wireId) {
+                    const newWp = [...(w.waypoints || [])]
+                    newWp[draggingWaypoint.index] = pos
+                    return { ...w, waypoints: newWp }
+                }
+                return w
+            }))
+            return
+        }
         // Handle dragging (board or component)
         if (draggingId) {
             const pos = screenToSVG(e.clientX, e.clientY)
@@ -526,16 +540,20 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
         const dy = (e.clientY - panStart.current.y) * (viewBox.h / rect.height)
         setViewBox((vb) => ({ ...vb, x: vb.x - dx, y: vb.y - dy }))
         panStart.current = { x: e.clientX, y: e.clientY }
-    }, [draggingId, screenToSVG, onComponentsChange, placedComponents, viewBox.w, viewBox.h])
+    }, [draggingId, screenToSVG, onComponentsChange, placedComponents, viewBox.w, viewBox.h, draggingWaypoint, onWiresChange, wires])
 
     const handleMouseUp = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+        if (draggingWaypoint) {
+            setDraggingWaypoint(null)
+            return
+        }
         if (draggingId) {
             setDraggingId(null)
             return
         }
         isPanning.current = false
         e.currentTarget.style.cursor = placementMode ? 'crosshair' : 'grab'
-    }, [draggingId, placementMode])
+    }, [draggingId, placementMode, draggingWaypoint])
 
     // ===== Place component on click =====
     const handleSVGClick = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
@@ -660,6 +678,25 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
         // Check if wire already exists
         const exists = wires.some(w => w.fromPin === wiringFrom.pin && w.toComponentId === compId && w.toComponentPin === pinId)
         if (exists) return true
+
+        let initialWaypoints: { x: number; y: number }[] = []
+        const pinPos = getPinPosition(wiringFrom.pin)
+        const comp = placedComponents.find(c => c.id === compId)
+        if (pinPos && comp) {
+            const offset = getComponentPinOffset(comp.type, pinId)
+            const endX = comp.x + offset.x
+            const endY = comp.y + offset.y
+            const dx = Math.abs(endX - pinPos.x)
+            const dy = Math.abs(endY - pinPos.y)
+            if (dx >= 5 && dy >= 5) {
+                const midX = pinPos.x + (endX - pinPos.x) / 2
+                initialWaypoints = [
+                    { x: midX, y: pinPos.y },
+                    { x: midX, y: endY }
+                ]
+            }
+        }
+
         // Create new wire
         const newWire: Wire = {
             id: `wire-${Date.now()}`,
@@ -667,12 +704,13 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
             toComponentId: compId,
             toComponentPin: pinId,
             color: WIRE_COLORS[wires.length % WIRE_COLORS.length],
+            waypoints: initialWaypoints.length > 0 ? initialWaypoints : undefined
         }
         onWiresChange([...wires, newWire])
         setWiringFrom(null)
         setWiringMouse(null)
         return true
-    }, [wiringMode, wiringFrom, wires, onWiresChange])
+    }, [wiringMode, wiringFrom, wires, onWiresChange, getPinPosition, placedComponents])
 
     // ===== Track mouse during wiring for preview =====
     const handleWiringMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
@@ -688,8 +726,16 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
         onPinClick?.(gpio)
     }, [handleWirePinClick, onPinClick])
 
-    // ===== Orthogonal wire path (Köşeli) =====
-    const wirePath = useCallback((x1: number, y1: number, x2: number, y2: number) => {
+    // ===== Orthogonal wire path (Köşeli) & Waypoints =====
+    const wirePath = useCallback((x1: number, y1: number, x2: number, y2: number, waypoints?: { x: number, y: number }[]) => {
+        if (waypoints && waypoints.length > 0) {
+            let d = `M ${x1} ${y1}`
+            for (const wp of waypoints) {
+                d += ` L ${wp.x} ${wp.y}`
+            }
+            d += ` L ${x2} ${y2}`
+            return d
+        }
         const dx = Math.abs(x2 - x1)
         const dy = Math.abs(y2 - y1)
         if (dx < 5 || dy < 5) return `M ${x1} ${y1} L ${x2} ${y2}`
@@ -899,7 +945,7 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                     const offset = getComponentPinOffset(comp.type, wire.toComponentPin)
                     const endX = comp.x + offset.x
                     const endY = comp.y + offset.y
-                    const path = wirePath(pinPos.x, pinPos.y, endX, endY)
+                    const path = wirePath(pinPos.x, pinPos.y, endX, endY, wire.waypoints)
 
                     return (
                         <g key={wire.id}
@@ -918,6 +964,17 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                             {/* Wire endpoints */}
                             <circle cx={pinPos.x} cy={pinPos.y} r={4} fill={wire.color} stroke="#000" strokeWidth={1} />
                             <circle cx={endX} cy={endY} r={4} fill={wire.color} stroke="#000" strokeWidth={1} />
+
+                            {/* Bend Points (Waypoints) */}
+                            {!deleteMode && wire.waypoints?.map((wp, idx) => (
+                                <circle key={idx} cx={wp.x} cy={wp.y} r={5} fill={wire.color} stroke="#fff" strokeWidth={1.5}
+                                    style={{ cursor: 'move' }}
+                                    onMouseDown={(e) => {
+                                        e.stopPropagation()
+                                        setDraggingWaypoint({ wireId: wire.id, index: idx })
+                                    }}
+                                />
+                            ))}
                         </g>
                     )
                 })}
