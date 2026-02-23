@@ -117,7 +117,7 @@ interface PlacedLEDProps {
 }
 
 function PlacedLED({ comp, onDragStart, onSelect, isDragging, isSelected }: PlacedLEDProps) {
-    const r = 20
+    const r = 38
     return (
         <g
             transform={`translate(${comp.x}, ${comp.y})`}
@@ -126,26 +126,26 @@ function PlacedLED({ comp, onDragStart, onSelect, isDragging, isSelected }: Plac
         >
             {/* Selection ring */}
             {isSelected && (
-                <circle cx={0} cy={0} r={r + 8} fill="none" stroke="#3b82f6" strokeWidth={2}
-                    strokeDasharray="5 3" opacity={0.8}>
-                    <animate attributeName="stroke-dashoffset" values="0;16" dur="1s" repeatCount="indefinite" />
+                <circle cx={0} cy={0} r={r + 12} fill="none" stroke="#3b82f6" strokeWidth={2.5}
+                    strokeDasharray="6 4" opacity={0.8}>
+                    <animate attributeName="stroke-dashoffset" values="0;20" dur="1s" repeatCount="indefinite" />
                 </circle>
             )}
 
             {/* Glow when ON (only when wired — future) */}
             {comp.on && (
-                <circle cx={0} cy={0} r={r + 12} fill={comp.color} opacity={0.25}
-                    style={{ filter: 'blur(6px)' }}>
+                <circle cx={0} cy={0} r={r + 20} fill={comp.color} opacity={0.25}
+                    style={{ filter: 'blur(10px)' }}>
                     <animate attributeName="opacity" values="0.25;0.1;0.25" dur="2s" repeatCount="indefinite" />
                 </circle>
             )}
 
             {/* LED base (dark ring) */}
-            <circle cx={0} cy={0} r={r + 3} fill="#1a1a2e" stroke="#444" strokeWidth={2} />
+            <circle cx={0} cy={0} r={r + 5} fill="#1a1a2e" stroke="#444" strokeWidth={2.5} />
 
             {/* LED dome */}
             <circle cx={0} cy={0} r={r} fill={comp.on ? comp.color : '#333'}
-                stroke={comp.on ? comp.color : '#555'} strokeWidth={1.5}
+                stroke={comp.on ? comp.color : '#555'} strokeWidth={2}
                 opacity={comp.on ? 0.9 : 0.25} />
 
             {/* Tinted dome hint (show what color when off) */}
@@ -154,11 +154,11 @@ function PlacedLED({ comp, onDragStart, onSelect, isDragging, isSelected }: Plac
             )}
 
             {/* Highlight reflection */}
-            <ellipse cx={-4} cy={-5} rx={6} ry={4} fill="white" opacity={0.25} />
+            <ellipse cx={-8} cy={-10} rx={12} ry={8} fill="white" opacity={0.25} />
 
             {/* Metal legs */}
-            <rect x={-6} y={r + 3} width={3} height={12} fill="#999" rx={1} />
-            <rect x={3} y={r + 3} width={3} height={16} fill="#999" rx={1} />
+            <rect x={-10} y={r + 5} width={5} height={22} fill="#999" rx={1.5} />
+            <rect x={5} y={r + 5} width={5} height={28} fill="#999" rx={1.5} />
 
 
         </g>
@@ -176,8 +176,8 @@ interface PlacedButtonProps {
 }
 
 function PlacedButton({ comp, onDragStart, onSelect, onPress, isDragging, isSelected }: PlacedButtonProps) {
-    const w = 52
-    const h = 40
+    const w = 90
+    const h = 70
     const capColor = comp.color
 
     return (
@@ -188,46 +188,46 @@ function PlacedButton({ comp, onDragStart, onSelect, onPress, isDragging, isSele
         >
             {/* Selection ring */}
             {isSelected && (
-                <rect x={-w / 2 - 6} y={-h / 2 - 6} width={w + 12} height={h + 12} rx={6}
-                    fill="none" stroke="#3b82f6" strokeWidth={2}
-                    strokeDasharray="5 3" opacity={0.8}>
-                    <animate attributeName="stroke-dashoffset" values="0;16" dur="1s" repeatCount="indefinite" />
+                <rect x={-w / 2 - 8} y={-h / 2 - 8} width={w + 16} height={h + 16} rx={8}
+                    fill="none" stroke="#3b82f6" strokeWidth={2.5}
+                    strokeDasharray="6 4" opacity={0.8}>
+                    <animate attributeName="stroke-dashoffset" values="0;20" dur="1s" repeatCount="indefinite" />
                 </rect>
             )}
 
             {/* Button housing (black body) */}
-            <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={4}
-                fill="#1a1a1a" stroke="#444" strokeWidth={2} />
+            <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={6}
+                fill="#1a1a1a" stroke="#444" strokeWidth={2.5} />
 
             {/* Inner cavity */}
-            <rect x={-w / 2 + 5} y={-h / 2 + 5} width={w - 10} height={h - 10} rx={3}
+            <rect x={-w / 2 + 8} y={-h / 2 + 8} width={w - 16} height={h - 16} rx={4}
                 fill="#111" />
 
             {/* Button cap (plunger) */}
             <rect
-                x={-w / 2 + 8} y={comp.on ? -h / 2 + 10 : -h / 2 + 7}
-                width={w - 16} height={h - 16} rx={3}
+                x={-w / 2 + 14} y={comp.on ? -h / 2 + 18 : -h / 2 + 13}
+                width={w - 28} height={h - 28} rx={4}
                 fill={capColor}
                 stroke={comp.on ? '#fff3' : '#0003'}
-                strokeWidth={1.5}
+                strokeWidth={2}
                 opacity={comp.on ? 1 : 0.85}
             />
             {/* Cap highlight */}
             {!comp.on && (
-                <rect x={-w / 2 + 11} y={-h / 2 + 9} width={w - 22} height={4} rx={2}
+                <rect x={-w / 2 + 18} y={-h / 2 + 15} width={w - 36} height={6} rx={3}
                     fill="white" opacity={0.2} />
             )}
 
             {/* 4 metal pins */}
-            <rect x={-w / 2 - 5} y={-7} width={6} height={4} fill="#999" rx={1} />
-            <rect x={-w / 2 - 5} y={4} width={6} height={4} fill="#999" rx={1} />
-            <rect x={w / 2 - 1} y={-7} width={6} height={4} fill="#999" rx={1} />
-            <rect x={w / 2 - 1} y={4} width={6} height={4} fill="#999" rx={1} />
+            <rect x={-w / 2 - 8} y={-12} width={10} height={7} fill="#999" rx={1.5} />
+            <rect x={-w / 2 - 8} y={6} width={10} height={7} fill="#999" rx={1.5} />
+            <rect x={w / 2 - 2} y={-12} width={10} height={7} fill="#999" rx={1.5} />
+            <rect x={w / 2 - 2} y={6} width={10} height={7} fill="#999" rx={1.5} />
 
 
 
             {/* Press area — mousedown/up for tactile press feel */}
-            <rect x={-w / 2 + 5} y={-h / 2 + 5} width={w - 10} height={h - 10} fill="transparent"
+            <rect x={-w / 2 + 8} y={-h / 2 + 8} width={w - 16} height={h - 16} fill="transparent"
                 style={{ cursor: 'pointer' }}
                 onMouseDown={(e) => { e.stopPropagation(); onPress(comp.id, true) }}
                 onMouseUp={() => onPress(comp.id, false)}
@@ -247,12 +247,12 @@ interface PlacedOLEDProps {
 }
 
 function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected }: PlacedOLEDProps) {
-    const w = 90
-    const h = 56
-    const screenW = 76
-    const screenH = 36
+    const w = 160
+    const h = 100
+    const screenW = 136
+    const screenH = 68
     const screenX = -screenW / 2
-    const screenY = -h / 2 + 6
+    const screenY = -h / 2 + 10
 
     return (
         <g
@@ -262,51 +262,51 @@ function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected }: Pla
         >
             {/* Selection ring */}
             {isSelected && (
-                <rect x={-w / 2 - 6} y={-h / 2 - 6} width={w + 12} height={h + 12} rx={6}
-                    fill="none" stroke="#3b82f6" strokeWidth={2}
-                    strokeDasharray="5 3" opacity={0.8}>
-                    <animate attributeName="stroke-dashoffset" values="0;16" dur="1s" repeatCount="indefinite" />
+                <rect x={-w / 2 - 8} y={-h / 2 - 8} width={w + 16} height={h + 16} rx={8}
+                    fill="none" stroke="#3b82f6" strokeWidth={2.5}
+                    strokeDasharray="6 4" opacity={0.8}>
+                    <animate attributeName="stroke-dashoffset" values="0;20" dur="1s" repeatCount="indefinite" />
                 </rect>
             )}
 
             {/* PCB board (blue) */}
-            <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={3}
-                fill="#0a3d6b" stroke="#0d4f8a" strokeWidth={1.5} />
+            <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={5}
+                fill="#0a3d6b" stroke="#0d4f8a" strokeWidth={2} />
 
             {/* PCB corner holes */}
-            <circle cx={-w / 2 + 4} cy={-h / 2 + 4} r={1.5} fill="none" stroke="#0d4f8a" strokeWidth={0.8} />
-            <circle cx={w / 2 - 4} cy={-h / 2 + 4} r={1.5} fill="none" stroke="#0d4f8a" strokeWidth={0.8} />
-            <circle cx={-w / 2 + 4} cy={h / 2 - 4} r={1.5} fill="none" stroke="#0d4f8a" strokeWidth={0.8} />
-            <circle cx={w / 2 - 4} cy={h / 2 - 4} r={1.5} fill="none" stroke="#0d4f8a" strokeWidth={0.8} />
+            <circle cx={-w / 2 + 7} cy={-h / 2 + 7} r={2.5} fill="none" stroke="#0d4f8a" strokeWidth={1} />
+            <circle cx={w / 2 - 7} cy={-h / 2 + 7} r={2.5} fill="none" stroke="#0d4f8a" strokeWidth={1} />
+            <circle cx={-w / 2 + 7} cy={h / 2 - 7} r={2.5} fill="none" stroke="#0d4f8a" strokeWidth={1} />
+            <circle cx={w / 2 - 7} cy={h / 2 - 7} r={2.5} fill="none" stroke="#0d4f8a" strokeWidth={1} />
 
             {/* Screen bezel (black frame) */}
-            <rect x={screenX - 2} y={screenY - 2} width={screenW + 4} height={screenH + 4} rx={2}
-                fill="#111" stroke="#333" strokeWidth={0.8} />
+            <rect x={screenX - 3} y={screenY - 3} width={screenW + 6} height={screenH + 6} rx={3}
+                fill="#111" stroke="#333" strokeWidth={1} />
 
             {/* Screen area */}
-            <rect x={screenX} y={screenY} width={screenW} height={screenH} rx={1}
+            <rect x={screenX} y={screenY} width={screenW} height={screenH} rx={2}
                 fill="#050505" />
 
             {/* Screen pixel grid texture */}
             <defs>
-                <pattern id={`oled-grid-${comp.id}`} width="3" height="3" patternUnits="userSpaceOnUse">
-                    <rect width="2.5" height="2.5" fill="#0a0a0a" />
+                <pattern id={`oled-grid-${comp.id}`} width="4" height="4" patternUnits="userSpaceOnUse">
+                    <rect width="3.5" height="3.5" fill="#0a0a0a" />
                 </pattern>
             </defs>
-            <rect x={screenX} y={screenY} width={screenW} height={screenH} rx={1}
+            <rect x={screenX} y={screenY} width={screenW} height={screenH} rx={2}
                 fill={`url(#oled-grid-${comp.id})`} opacity={0.4} />
 
             {/* Screen content — shows text if powered */}
             {comp.on && (
                 <>
                     {/* Subtle glow */}
-                    <rect x={screenX} y={screenY} width={screenW} height={screenH} rx={1}
+                    <rect x={screenX} y={screenY} width={screenW} height={screenH} rx={2}
                         fill="#00aaff" opacity={0.03} />
-                    <text x={0} y={screenY + 14} textAnchor="middle" fontSize={7}
+                    <text x={0} y={screenY + 26} textAnchor="middle" fontSize={12}
                         fontFamily="'JetBrains Mono', monospace" fill="#00ccff" opacity={0.9}>
                         {comp.screenText || 'Hello ESP32!'}
                     </text>
-                    <text x={0} y={screenY + 26} textAnchor="middle" fontSize={5}
+                    <text x={0} y={screenY + 48} textAnchor="middle" fontSize={9}
                         fontFamily="'JetBrains Mono', monospace" fill="#00ccff" opacity={0.5}>
                         SSD1306 128x64
                     </text>
@@ -314,15 +314,15 @@ function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected }: Pla
             )}
 
             {/* Scan line effect */}
-            <rect x={screenX} y={screenY} width={screenW} height={1} fill="#ffffff" opacity={0.03}>
+            <rect x={screenX} y={screenY} width={screenW} height={2} fill="#ffffff" opacity={0.03}>
                 <animate attributeName="y" values={`${screenY};${screenY + screenH}`} dur="3s" repeatCount="indefinite" />
             </rect>
 
             {/* 4 header pins at bottom */}
-            {[-18, -6, 6, 18].map((px, i) => (
+            {[-30, -10, 10, 30].map((px, i) => (
                 <g key={i}>
-                    <rect x={px - 2} y={h / 2 - 2} width={4} height={10} fill="#c0a030" rx={0.5} />
-                    <text x={px} y={h / 2 + 16} textAnchor="middle" fontSize={3.5}
+                    <rect x={px - 3} y={h / 2 - 3} width={6} height={16} fill="#c0a030" rx={1} />
+                    <text x={px} y={h / 2 + 22} textAnchor="middle" fontSize={6}
                         fontFamily="'JetBrains Mono', monospace" fill="#888">
                         {['GND', 'VCC', 'SCL', 'SDA'][i]}
                     </text>
@@ -330,7 +330,7 @@ function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected }: Pla
             ))}
 
             {/* PCB text */}
-            <text x={w / 2 - 5} y={h / 2 - 5} textAnchor="end" fontSize={3.5}
+            <text x={w / 2 - 8} y={h / 2 - 8} textAnchor="end" fontSize={6}
                 fontFamily="'Inter', sans-serif" fill="#1a6fb0" opacity={0.8}>SSD1306</text>
         </g>
     )
