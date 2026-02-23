@@ -5,11 +5,15 @@ import (
 	"net/http"
 
 	"github.com/Omieron/esp32-simulator/server"
+	"github.com/Omieron/esp32-simulator/simulator"
 )
 
 func main() {
+	// Initialise GPIO state for the simulated board.
+	gpio := simulator.NewGPIOState()
+
 	// Create and configure the HTTP / WebSocket server.
-	srv := server.NewServer(nil)
+	srv := server.NewServer(gpio)
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
