@@ -159,9 +159,7 @@ function PlacedLED({ comp, onDragStart, onSelect, isDragging, isSelected }: Plac
             <rect x={-6} y={r + 3} width={3} height={12} fill="#999" rx={1} />
             <rect x={3} y={r + 3} width={3} height={16} fill="#999" rx={1} />
 
-            {/* Label */}
-            <text x={0} y={-r - 10} textAnchor="middle" fontSize={9}
-                fontFamily="'JetBrains Mono', monospace" fill="#ccc">{comp.label}</text>
+
         </g>
     )
 }
@@ -225,9 +223,7 @@ function PlacedButton({ comp, onDragStart, onSelect, onPress, isDragging, isSele
             <rect x={w / 2 - 1} y={-7} width={6} height={4} fill="#999" rx={1} />
             <rect x={w / 2 - 1} y={4} width={6} height={4} fill="#999" rx={1} />
 
-            {/* Label */}
-            <text x={0} y={-h / 2 - 10} textAnchor="middle" fontSize={9}
-                fontFamily="'JetBrains Mono', monospace" fill="#ccc">{comp.label}</text>
+
 
             {/* Press area — mousedown/up for tactile press feel */}
             <rect x={-w / 2 + 5} y={-h / 2 + 5} width={w - 10} height={h - 10} fill="transparent"
@@ -292,6 +288,7 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
     // Palette & placement mode
     const [showPalette, setShowPalette] = useState(false)
     const [placementMode, setPlacementMode] = useState<{ type: ComponentType; color: string; label: string } | null>(null)
+    const [deleteMode, setDeleteMode] = useState(false)
 
     // Dragging & selecting — '__board__' is the special ID for the board itself
     const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -411,6 +408,15 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
         setPlacementMode(null)
     }, [])
 
+    // ===== Handle component selection (or delete in delete mode) =====
+    const handleComponentSelect = useCallback((id: string) => {
+        if (deleteMode) {
+            onComponentsChange(placedComponents.filter(c => c.id !== id))
+            return
+        }
+        setSelectedComponentId(id)
+    }, [deleteMode, onComponentsChange, placedComponents])
+
     const handleReset = useCallback(() => {
         setViewBox(DEFAULT_VB)
     }, [])
@@ -419,21 +425,21 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.key === 'Delete' || e.key === 'Backspace') && selectedComponentId) {
-                // Don't delete if user is typing in an input
                 if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return
                 e.preventDefault()
                 onComponentsChange(placedComponents.filter(c => c.id !== selectedComponentId))
                 setSelectedComponentId(null)
             }
-            // Escape to cancel placement mode or deselect
+            // Escape to cancel placement mode, delete mode, or deselect
             if (e.key === 'Escape') {
-                if (placementMode) setPlacementMode(null)
+                if (deleteMode) setDeleteMode(false)
+                else if (placementMode) setPlacementMode(null)
                 else setSelectedComponentId(null)
             }
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [selectedComponentId, onComponentsChange, placedComponents, placementMode])
+    }, [selectedComponentId, onComponentsChange, placedComponents, placementMode, deleteMode])
 
     // Prevent default wheel on container
     useEffect(() => {
@@ -445,7 +451,7 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
     }, [])
 
     // Determine cursor based on mode
-    const svgCursor = placementMode ? 'crosshair' : draggingId ? 'grabbing' : 'grab'
+    const svgCursor = deleteMode ? 'not-allowed' : placementMode ? 'crosshair' : draggingId ? 'grabbing' : 'grab'
 
     return (
         <div className="board-container">
@@ -460,6 +466,20 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                     title={placementMode ? 'Cancel placement' : 'Add component'}
                 >
                     {placementMode ? '✕' : '+'}
+                </button>
+
+                {/* Delete mode toggle */}
+                <button
+                    className={`board-add__btn board-add__btn--delete ${deleteMode ? 'board-add__btn--active-delete' : ''}`}
+                    onClick={() => {
+                        setDeleteMode(!deleteMode)
+                        setPlacementMode(null)
+                        setShowPalette(false)
+                        setSelectedComponentId(null)
+                    }}
+                    title={deleteMode ? 'Cancel delete mode' : 'Delete components'}
+                >
+                    🗑
                 </button>
 
                 {/* Palette dropdown */}
@@ -486,6 +506,14 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                 <div className="board-placement-hint">
                     Click on board to place <strong>{placementMode.label}</strong>
                     <button className="board-placement-hint__cancel" onClick={cancelPlacement}>Cancel</button>
+                </div>
+            )}
+
+            {/* Delete mode indicator */}
+            {deleteMode && (
+                <div className="board-placement-hint board-placement-hint--delete">
+                    🗑 Click a component to delete it
+                    <button className="board-placement-hint__cancel" onClick={() => setDeleteMode(false)}>Cancel (Esc)</button>
                 </div>
             )}
 
@@ -588,8 +616,8 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                         <PlacedLED
                             key={comp.id}
                             comp={comp}
-                            onDragStart={handleComponentDragStart}
-                            onSelect={setSelectedComponentId}
+                            onDragStart={deleteMode ? () => { } : handleComponentDragStart}
+                            onSelect={handleComponentSelect}
                             isDragging={draggingId === comp.id}
                             isSelected={selectedComponentId === comp.id}
                         />
@@ -598,9 +626,9 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                         <PlacedButton
                             key={comp.id}
                             comp={comp}
-                            onDragStart={handleComponentDragStart}
-                            onSelect={setSelectedComponentId}
-                            onPress={(id, pressed) => {
+                            onDragStart={deleteMode ? () => { } : handleComponentDragStart}
+                            onSelect={handleComponentSelect}
+                            onPress={deleteMode ? () => { } : (id, pressed) => {
                                 onComponentsChange(placedComponents.map(c =>
                                     c.id === id ? { ...c, on: pressed } : c
                                 ))

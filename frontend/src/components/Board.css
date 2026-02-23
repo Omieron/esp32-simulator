@@ -45,6 +45,37 @@
     box-shadow: 0 2px 8px rgba(233, 69, 96, 0.4);
 }
 
+.board-add__btn--delete {
+    background: rgba(40, 40, 60, 0.9);
+    border-color: var(--border-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    font-size: 1rem;
+}
+
+.board-add__btn--delete:hover {
+    background: rgba(233, 69, 96, 0.3);
+    border-color: #e94560;
+}
+
+.board-add__btn--active-delete {
+    background: #e94560 !important;
+    border-color: #e94560 !important;
+    box-shadow: 0 2px 12px rgba(233, 69, 96, 0.5) !important;
+    animation: deletePulse 1.5s ease infinite;
+}
+
+@keyframes deletePulse {
+
+    0%,
+    100% {
+        box-shadow: 0 2px 12px rgba(233, 69, 96, 0.5);
+    }
+
+    50% {
+        box-shadow: 0 2px 20px rgba(233, 69, 96, 0.8);
+    }
+}
+
 /* ===== Component Palette Dropdown ===== */
 .board-palette {
     position: absolute;
@@ -165,6 +196,35 @@
 .board-placement-hint__cancel:hover {
     background: var(--accent-primary);
     color: white;
+}
+
+.board-placement-hint--delete {
+    background: rgba(233, 69, 96, 0.15);
+    border-color: #e94560;
+    color: #e94560;
+    animation: deleteBannerPulse 2s ease infinite;
+}
+
+.board-placement-hint--delete .board-placement-hint__cancel {
+    border-color: #e94560;
+    color: #e94560;
+}
+
+.board-placement-hint--delete .board-placement-hint__cancel:hover {
+    background: #e94560;
+    color: white;
+}
+
+@keyframes deleteBannerPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.3);
+    }
+
+    50% {
+        box-shadow: 0 0 0 6px rgba(233, 69, 96, 0);
+    }
 }
 
 /* ===== Zoom Controls Overlay (top-right) ===== */
