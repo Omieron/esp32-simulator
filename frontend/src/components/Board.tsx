@@ -34,6 +34,7 @@ const WIRE_COLORS = ['#e94560', '#4ecca3', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec
 export function getComponentPinOffset(type: ComponentType, pinId: string): { x: number; y: number } {
     if (type === 'led') {
         const r = 38
+        // Right = anode (+) long leg, left = cathode (−) short leg — matches your LED
         if (pinId === 'anode') return { x: 7.5, y: r + 30 }
         if (pinId === 'cathode') return { x: -7.5, y: r + 24 }
     } else if (type === 'button') {
@@ -144,9 +145,47 @@ function PinCircle({ pin, x, y, side, pinStates, selectedPin, onPinClick, hovere
     )
 }
 
+// ===== LED: derive lit state — requires complete circuit =====
+// A real LED needs current flow: anode (+) must be HIGH and cathode (−) must be LOW.
+// This means BOTH legs must be wired for the LED to turn on.
+const VCC_PINS = [-1, -2, -4, -8] // 3V3, 5V power pins
+const GND_PINS = [-5, -6, -7]     // GND pins
+
+function isAnodeHigh(fromPin: number, pinStates: Map<number, PinState>): boolean {
+    if (VCC_PINS.includes(fromPin)) return true
+    if (fromPin >= 0 && pinStates.get(fromPin)?.state === 'HIGH') return true
+    return false
+}
+
+function isCathodeLow(fromPin: number, pinStates: Map<number, PinState>): boolean {
+    if (GND_PINS.includes(fromPin)) return true
+    if (fromPin >= 0 && pinStates.get(fromPin)?.state === 'LOW') return true
+    return false
+}
+
+function getLedOnFromWires(
+    compId: string,
+    wires: Wire[],
+    pinStates: Map<number, PinState>
+): boolean {
+    const ledWires = wires.filter(w => w.toComponentId === compId)
+    const anodeWire = ledWires.find(w => w.toComponentPin === 'anode')
+    const cathodeWire = ledWires.find(w => w.toComponentPin === 'cathode')
+
+    // Both legs must be wired for a complete circuit
+    if (!anodeWire || !cathodeWire) return false
+
+    const aHigh = isAnodeHigh(anodeWire.fromPin, pinStates)
+    const cLow = isCathodeLow(cathodeWire.fromPin, pinStates)
+
+    return aHigh && cLow
+}
+
 // ===== Placed LED SVG Element =====
 interface PlacedLEDProps {
     comp: PlacedComponent
+    /** Derived from wired GPIO: HIGH on anode pin = lit */
+    isOn: boolean
     onDragStart: (id: string, e: React.MouseEvent) => void
     onSelect: (id: string) => void
     isDragging: boolean
@@ -155,7 +194,7 @@ interface PlacedLEDProps {
     onPinClick: (compId: string, pinId: string) => void
 }
 
-function PlacedLED({ comp, onDragStart, onSelect, isDragging, isSelected, wiringMode, onPinClick }: PlacedLEDProps) {
+function PlacedLED({ comp, isOn, onDragStart, onSelect, isDragging, isSelected, wiringMode, onPinClick }: PlacedLEDProps) {
     const r = 38
     return (
         <g
@@ -171,41 +210,53 @@ function PlacedLED({ comp, onDragStart, onSelect, isDragging, isSelected, wiring
                 </circle>
             )}
 
-            {/* Glow when ON (only when wired — future) */}
-            {comp.on && (
-                <circle cx={0} cy={0} r={r + 20} fill={comp.color} opacity={0.25}
+            {/* Glow when ON — opacity animation for brightness effect */}
+            {isOn && (
+                <circle cx={0} cy={0} r={r + 20} fill={comp.color}
                     style={{ filter: 'blur(10px)' }}>
-                    <animate attributeName="opacity" values="0.25;0.1;0.25" dur="2s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.35;0.12;0.35" dur="1.5s" repeatCount="indefinite" />
                 </circle>
             )}
 
             {/* LED base (dark ring) */}
             <circle cx={0} cy={0} r={r + 5} fill="#1a1a2e" stroke="#444" strokeWidth={2.5} />
 
-            {/* LED dome */}
-            <circle cx={0} cy={0} r={r} fill={comp.on ? comp.color : '#333'}
-                stroke={comp.on ? comp.color : '#555'} strokeWidth={2}
-                opacity={comp.on ? 0.9 : 0.25} />
+            {/* LED dome — color from prop, opacity animation when lit */}
+            <circle cx={0} cy={0} r={r} fill={isOn ? comp.color : '#333'}
+                stroke={isOn ? comp.color : '#555'} strokeWidth={2}
+                opacity={isOn ? 0.9 : 0.25}>
+                {isOn && (
+                    <animate attributeName="opacity" values="0.85;1;0.85" dur="1.2s" repeatCount="indefinite" />
+                )}
+            </circle>
 
             {/* Tinted dome hint (show what color when off) */}
-            {!comp.on && (
+            {!isOn && (
                 <circle cx={0} cy={0} r={r} fill={comp.color} opacity={0.08} />
             )}
 
             {/* Highlight reflection */}
-            <ellipse cx={-8} cy={-10} rx={12} ry={8} fill="white" opacity={0.25} />
+            <ellipse cx={-8} cy={-10} rx={12} ry={8} fill="white" opacity={isOn ? 0.35 : 0.25} />
 
             {/* Metal legs */}
             <rect x={-10} y={r + 5} width={5} height={22} fill="#999" rx={1.5} />
             <rect x={5} y={r + 5} width={5} height={28} fill="#999" rx={1.5} />
 
-            {/* Connection Pins */}
-            <circle cx={-7.5} cy={r + 24} r={5} fill="#e5e7eb" stroke="#6b7280" strokeWidth={1.5}
-                cursor={wiringMode ? "crosshair" : "default"}
-                onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, 'cathode') }} />
-            <circle cx={7.5} cy={r + 30} r={5} fill="#e5e7eb" stroke="#6b7280" strokeWidth={1.5}
-                cursor={wiringMode ? "crosshair" : "default"}
-                onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, 'anode') }} />
+            {/* Connection Pins — right: anode (+) long leg, left: cathode (−) short leg */}
+            <g>
+                <circle cx={-7.5} cy={r + 24} r={8} fill="#e5e7eb" stroke="#6b7280" strokeWidth={1.5}
+                    cursor={wiringMode ? "crosshair" : "default"}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, 'cathode') }} />
+                <text x={-7.5} y={r + 38} textAnchor="middle" fontSize={7} fill="#888" fontFamily="'Inter', sans-serif">− GND</text>
+            </g>
+            <g>
+                <circle cx={7.5} cy={r + 30} r={8} fill="#e5e7eb" stroke="#6b7280" strokeWidth={1.5}
+                    cursor={wiringMode ? "crosshair" : "default"}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, 'anode') }} />
+                <text x={7.5} y={r + 44} textAnchor="middle" fontSize={7} fill="#888" fontFamily="'Inter', sans-serif">+ 5V/GPIO</text>
+            </g>
         </g>
     )
 }
@@ -278,8 +329,9 @@ function PlacedButton({ comp, onDragStart, onSelect, onPress, isDragging, isSele
                 { id: 'tr', cx: 48, cy: -8.5 },
                 { id: 'br', cx: 48, cy: 9.5 }
             ].map(pin => (
-                <circle key={pin.id} cx={pin.cx} cy={pin.cy} r={5} fill="#e5e7eb" stroke="#6b7280" strokeWidth={1.5}
+                <circle key={pin.id} cx={pin.cx} cy={pin.cy} r={8} fill="#e5e7eb" stroke="#6b7280" strokeWidth={1.5}
                     cursor={wiringMode ? "crosshair" : "default"}
+                    onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, pin.id) }} />
             ))}
 
@@ -387,8 +439,9 @@ function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected, wirin
                             fontFamily="'JetBrains Mono', monospace" fill="#888">
                             {pinId.toUpperCase()}
                         </text>
-                        <circle cx={px} cy={h / 2 + 5} r={4.5} fill="#e5e7eb" stroke="#b48600" strokeWidth={1.5}
+                        <circle cx={px} cy={h / 2 + 5} r={6} fill="#e5e7eb" stroke="#b48600" strokeWidth={1.5}
                             cursor={wiringMode ? "crosshair" : "default"}
+                            onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
                             onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, pinId) }} />
                     </g>
                 )
@@ -658,26 +711,32 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
         if (!pinPos) return false
 
         if (!wiringFrom) {
-            // Start wiring from this pin
+            console.log('[WIRE] Start from board pin:', gpio, 'at', pinPos)
             setWiringFrom({ pin: gpio, x: pinPos.x, y: pinPos.y })
             return true
         }
         // If clicking same pin, cancel
         if (wiringFrom.pin === gpio) {
+            console.log('[WIRE] Cancel — same pin clicked')
             setWiringFrom(null)
             setWiringMouse(null)
             return true
         }
-        // Can't wire pin to pin — need to click a component
+        console.log('[WIRE] Pin-to-pin ignored, click a component pin next')
         return true
     }, [wiringMode, wiringFrom, getPinPosition])
 
     // ===== Wire component PIN click handler =====
     const handleWireComponentPinClick = useCallback((compId: string, pinId: string) => {
+        console.log('[WIRE] Component pin clicked:', compId, pinId,
+            'wiringMode:', wiringMode, 'wiringFrom:', wiringFrom)
         if (!wiringMode || !wiringFrom) return false
         // Check if wire already exists
         const exists = wires.some(w => w.fromPin === wiringFrom.pin && w.toComponentId === compId && w.toComponentPin === pinId)
-        if (exists) return true
+        if (exists) {
+            console.log('[WIRE] Wire already exists')
+            return true
+        }
 
         // Create new wire
         const newWire: Wire = {
@@ -687,6 +746,7 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
             toComponentPin: pinId,
             color: WIRE_COLORS[wires.length % WIRE_COLORS.length],
         }
+        console.log('[WIRE] Created wire:', newWire)
         onWiresChange([...wires, newWire])
         setWiringFrom(null)
         setWiringMouse(null)
@@ -983,7 +1043,12 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                         onPinClick: handleWireComponentPinClick
                     };
 
-                    if (comp.type === 'led') return <PlacedLED {...commonProps} />
+                    if (comp.type === 'led') return (
+                        <PlacedLED
+                            {...commonProps}
+                            isOn={getLedOnFromWires(comp.id, wires, pinStates)}
+                        />
+                    )
                     if (comp.type === 'button') return (
                         <PlacedButton
                             {...commonProps}
