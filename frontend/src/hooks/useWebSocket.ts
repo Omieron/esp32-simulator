@@ -15,6 +15,7 @@ export type ServerMessage =
     | { type: 'pin_update'; pins: { number: number; mode: 'INPUT' | 'OUTPUT'; state: 'HIGH' | 'LOW' }[] }
     | { type: 'serial_output'; data: string }
     | { type: 'compile_error'; error: string }
+    | { type: 'compile_success'; binPath?: string }
     | { type: 'status'; running: boolean; message: string }
 
 // ===== Connection Status =====
@@ -112,6 +113,11 @@ export default function useWebSocket(): UseWebSocketReturn {
                 case 'compile_error':
                     setLastError(msg.error)
                     setIsRunning(false)
+                    break
+
+                case 'compile_success':
+                    setLastError(null)
+                    // binPath available for future flash/simulation use
                     break
 
                 case 'status':

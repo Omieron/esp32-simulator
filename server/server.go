@@ -21,11 +21,13 @@ type ClientMessage struct {
 }
 
 // ServerMessage represents a message from the server.
+// Message types: pin_update, serial_output, status, compile_error, compile_success.
 type ServerMessage struct {
 	Type    string    `json:"type"`
 	Pins    []PinJSON `json:"pins,omitempty"`
 	Data    string    `json:"data,omitempty"`
 	Error   string    `json:"error,omitempty"`
+	BinPath string    `json:"binPath,omitempty"` // compile_success: path to .bin file
 	Running bool      `json:"running,omitempty"`
 	Message string    `json:"message,omitempty"`
 }
