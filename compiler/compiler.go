@@ -27,9 +27,10 @@ type CompileResult struct {
 func Compile(code string) (*CompileResult, error) {
 	result := &CompileResult{}
 
-	// Check if arduino-cli is available
-	if _, err := exec.LookPath("arduino-cli"); err != nil {
-		result.ErrorMsg = "arduino-cli not found in PATH. Please install it from https://arduino.github.io/arduino-cli/"
+	// Resolve arduino-cli path (PATH or auto-download to ~/.esp32-simulator/bin)
+	arduinoCli, err := resolveArduinoCliPath()
+	if err != nil {
+		result.ErrorMsg = err.Error()
 		return result, err
 	}
 
@@ -58,7 +59,7 @@ func Compile(code string) (*CompileResult, error) {
 	buildPath := filepath.Join(tmpDir, "build")
 
 	// 4. Run arduino-cli compile
-	cmd := exec.Command("arduino-cli", "compile",
+	cmd := exec.Command(arduinoCli, "compile",
 		"-b", fqbn,
 		"--build-path", buildPath,
 		sketchDir,
