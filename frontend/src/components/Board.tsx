@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { LEFT_PINS, RIGHT_PINS } from './pinDefinitions'
 import type { PinState, PinDefinition } from './pinDefinitions'
 
@@ -838,7 +838,6 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                 onWheel={handleWheel}
                 onMouseDown={handleMouseDown}
                 onMouseMove={(e) => { handleMouseMove(e); handleWiringMouseMove(e) }}
-                onPointerMove={(e) => { handleMouseMove(e as React.MouseEvent); handleWiringMouseMove(e as React.MouseEvent) }}
                 onMouseUp={handleMouseUp}
                 onMouseLeave={handleMouseUp}
                 onClick={handleSVGClick}
@@ -929,8 +928,8 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                         <g key={wire.id}
                             style={{ cursor: deleteMode ? 'not-allowed' : 'default' }}
                         >
-                            <g onClick={(e) => {
-                                e.stopPropagation()
+                            <g onClick={(ev: React.MouseEvent) => {
+                                ev.stopPropagation()
                                 if (deleteMode) { onWiresChange(wires.filter(w => w.id !== wire.id)) }
                             }}>
                                 {/* Wire shadow */}
@@ -947,14 +946,14 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                             {!deleteMode && vLen >= 2 && (
                                 <circle cx={cx} cy={cy} r={5} fill={wire.color} stroke="#fff" strokeWidth={1.5}
                                     style={{ cursor: 'ew-resize' }}
-                                    onPointerDown={(e) => {
-                                        e.stopPropagation()
-                                        (e.currentTarget as Element).setPointerCapture(e.pointerId)
-                                        const pos = screenToSVG(e.clientX, e.clientY)
+                                    onPointerDown={(ev: React.PointerEvent<SVGCircleElement>) => {
+                                        ev.stopPropagation()
+                                        ev.currentTarget.setPointerCapture(ev.pointerId)
+                                        const pos = screenToSVG(ev.clientX, ev.clientY)
                                         setDraggingSegment({ wireId: wire.id, offsetX: pos.x - mx })
                                     }}
-                                    onPointerUp={(e) => {
-                                        (e.currentTarget as Element).releasePointerCapture(e.pointerId)
+                                    onPointerUp={(ev: React.PointerEvent<SVGCircleElement>) => {
+                                        ev.currentTarget.releasePointerCapture(ev.pointerId)
                                         setDraggingSegment(null)
                                     }}
                                 />

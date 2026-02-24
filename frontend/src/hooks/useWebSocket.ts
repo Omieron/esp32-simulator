@@ -31,6 +31,8 @@ export interface UseWebSocketReturn {
     pinStates: Map<number, PinState>
     /** Serial monitor output lines */
     serialOutput: string[]
+    /** Whether code is currently compiling (upload sent, waiting for result) */
+    isCompiling: boolean
     /** Whether code is currently running */
     isRunning: boolean
     /** Last compile/status error message */
@@ -65,6 +67,7 @@ export default function useWebSocket(): UseWebSocketReturn {
         return map
     })
     const [serialOutput, setSerialOutput] = useState<string[]>([])
+    const [isCompiling, setIsCompiling] = useState(false)
     const [isRunning, setIsRunning] = useState(false)
     const [lastError, setLastError] = useState<string | null>(null)
 
@@ -112,11 +115,13 @@ export default function useWebSocket(): UseWebSocketReturn {
 
                 case 'compile_error':
                     setLastError(msg.error)
+                    setIsCompiling(false)
                     setIsRunning(false)
                     break
 
                 case 'compile_success':
                     setLastError(null)
+                    setIsCompiling(false)
                     // binPath available for future flash/simulation use
                     break
 
@@ -164,6 +169,7 @@ export default function useWebSocket(): UseWebSocketReturn {
         ws.onclose = () => {
             if (!mountedRef.current) return
             setStatus('disconnected')
+            setIsCompiling(false)
             wsRef.current = null
 
             // Auto-reconnect
@@ -196,6 +202,7 @@ export default function useWebSocket(): UseWebSocketReturn {
     const uploadCode = useCallback((code: string) => {
         setLastError(null)
         setSerialOutput([])
+        setIsCompiling(true)
         send({ type: 'upload_code', code })
     }, [send])
 
@@ -219,6 +226,7 @@ export default function useWebSocket(): UseWebSocketReturn {
         status,
         pinStates,
         serialOutput,
+        isCompiling,
         isRunning,
         lastError,
         uploadCode,

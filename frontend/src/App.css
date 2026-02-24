@@ -179,6 +179,34 @@
   word-break: break-all;
 }
 
+/* ===== Compile Spinner ===== */
+.compile-spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  color: var(--accent-primary);
+  font-weight: 500;
+}
+
+.compile-spinner__ring {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(233, 69, 96, 0.3);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: compile-spinner-spin 0.8s linear infinite;
+}
+
+.compile-spinner__text {
+  color: var(--accent-primary);
+}
+
+@keyframes compile-spinner-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ===== Compile Error ===== */
 .compile-error {
   padding: 6px 12px;

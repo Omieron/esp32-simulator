@@ -65,8 +65,13 @@ function App() {
         <section className="panel">
           <div className="panel__header">
             <span>📝 Code Editor</span>
-            <div className="editor-toolbar" style={{ display: 'inline-flex', marginLeft: '12px', padding: 0, background: 'transparent', border: 'none', gap: '6px' }}>
-              {!ws.isRunning ? (
+            <div className="editor-toolbar" style={{ display: 'inline-flex', marginLeft: '12px', padding: 0, background: 'transparent', border: 'none', gap: '6px', alignItems: 'center' }}>
+              {ws.isCompiling ? (
+                <span className="compile-spinner" title="Compiling...">
+                  <span className="compile-spinner__ring" />
+                  <span className="compile-spinner__text">Compiling...</span>
+                </span>
+              ) : !ws.isRunning ? (
                 <button
                   className="editor-toolbar__btn editor-toolbar__btn--primary"
                   onClick={handleUpload}
