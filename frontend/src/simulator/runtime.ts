@@ -131,6 +131,11 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
     onPinChange?.(pin, pins[idx].state, pins[idx].mode)
   }
 
+  /**
+   * Non-blocking delay. Returns a Promise that resolves after ms milliseconds.
+   * Use with await: await delay(1000)
+   * Transpiled setup/loop must be async to use await delay().
+   */
   const delay = (ms: number): Promise<void> => {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }

@@ -34,15 +34,12 @@ export default function useSimulation(): UseSimulationReturn {
     createInitialPinStates
   )
   const [isSimRunning, setIsSimRunning] = useState(false)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const runningRef = useRef(false)
   const runtimeRef = useRef<ReturnType<typeof createRuntime> | null>(null)
 
   const startSimulation = useCallback(() => {
-    // Clean up any previous run
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
-    }
+    // Stop any previous run
+    runningRef.current = false
 
     const runtime = createRuntime({
       onPinChange: (pin, state, mode) => {
@@ -67,21 +64,23 @@ export default function useSimulation(): UseSimulationReturn {
     })
 
     setIsSimRunning(true)
+    runningRef.current = true
 
-    // Test: blink GPIO 2 (matches DEFAULT_SKETCH LED_PIN)
-    runtime.pinMode(2, runtime.OUTPUT)
-    let high = true
-    intervalRef.current = setInterval(() => {
-      runtime.digitalWrite(2, high ? runtime.HIGH : runtime.LOW)
-      high = !high
-    }, 1000)
+    // Test: blink GPIO 2 using async delay (same pattern as transpiled setup/loop)
+    const runBlink = async () => {
+      runtime.pinMode(2, runtime.OUTPUT)
+      let high = true
+      while (runningRef.current) {
+        runtime.digitalWrite(2, high ? runtime.HIGH : runtime.LOW)
+        high = !high
+        await runtime.delay(1000)
+      }
+    }
+    runBlink()
   }, [])
 
   const stopSimulation = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
-    }
+    runningRef.current = false
     runtimeRef.current = null
     setIsSimRunning(false)
     setSimPinStates(createInitialPinStates())
