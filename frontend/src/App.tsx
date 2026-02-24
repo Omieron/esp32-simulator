@@ -103,8 +103,8 @@ function App() {
               {!sim.isSimRunning ? (
                 <button
                   className="editor-toolbar__btn"
-                  onClick={sim.startSimulation}
-                  title="Run JS simulation (blinks GPIO 2)"
+                  onClick={() => sim.startSimulation(code)}
+                  title="Run JS simulation (transpiled Arduino code)"
                 >
                   ⚡ Simulate
                 </button>
@@ -140,9 +140,9 @@ function App() {
           )}
 
           {/* Error display */}
-          {ws.lastError && (
+          {(ws.lastError || sim.lastError) && (
             <div className="compile-error">
-              <span>❌ {ws.lastError}</span>
+              <span>❌ {ws.lastError || sim.lastError}</span>
             </div>
           )}
           {/* Success display (brief) */}

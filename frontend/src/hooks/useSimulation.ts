@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import { createRuntime } from '../simulator/runtime'
+import { transpile } from '../simulator/transpiler'
 import type { PinState } from '../components/pinDefinitions'
 
 // ===== Hook Return Type =====
@@ -13,8 +14,10 @@ export interface UseSimulationReturn {
   simSerialOutput: string[]
   /** Whether JS simulation is currently running */
   isSimRunning: boolean
-  /** Start a test simulation (blinks GPIO 2). Will be replaced by transpiled code in Task 6. */
-  startSimulation: () => void
+  /** Last transpile or runtime error */
+  lastError: string | null
+  /** Start simulation with Arduino code (transpiled to JS) */
+  startSimulation: (code: string) => void
   /** Stop the running simulation */
   stopSimulation: () => void
   /** Update pin state from outside (e.g. button press). For Task 3+ integration. */
@@ -41,12 +44,21 @@ export default function useSimulation(): UseSimulationReturn {
   )
   const [simSerialOutput, setSimSerialOutput] = useState<string[]>([])
   const [isSimRunning, setIsSimRunning] = useState(false)
+  const [lastError, setLastError] = useState<string | null>(null)
   const runningRef = useRef(false)
   const runtimeRef = useRef<ReturnType<typeof createRuntime> | null>(null)
 
-  const startSimulation = useCallback(() => {
+  const startSimulation = useCallback((code: string) => {
     // Stop any previous run
     runningRef.current = false
+
+    const result = transpile(code)
+    if (!result.success) {
+      setLastError(result.error ?? 'Transpile failed')
+      return
+    }
+
+    setLastError(null)
 
     const runtime = createRuntime({
       onPinChange: (pin, state, mode) => {
@@ -82,18 +94,23 @@ export default function useSimulation(): UseSimulationReturn {
     setIsSimRunning(true)
     runningRef.current = true
 
-    // Test: blink GPIO 2 using async delay (same pattern as transpiled setup/loop)
-    const runBlink = async () => {
-      runtime.pinMode(2, runtime.OUTPUT)
-      runtime.Serial.println('ESP32-S3 Simulator Ready!')
-      let high = true
-      while (runningRef.current) {
-        runtime.digitalWrite(2, high ? runtime.HIGH : runtime.LOW)
-        high = !high
-        await runtime.delay(1000)
+    const runTranspiled = async () => {
+      try {
+        const factory = eval(result.jsCode!)
+        const { setup, loop } = factory(runtime)
+        await setup()
+        while (runningRef.current) {
+          await loop()
+        }
+      } catch (err) {
+        setLastError(err instanceof Error ? err.message : String(err))
+      } finally {
+        runtimeRef.current = null
+        setIsSimRunning(false)
+        setSimPinStates(createInitialPinStates())
       }
     }
-    runBlink()
+    runTranspiled()
   }, [])
 
   const stopSimulation = useCallback(() => {
@@ -101,6 +118,7 @@ export default function useSimulation(): UseSimulationReturn {
     runtimeRef.current = null
     setIsSimRunning(false)
     setSimPinStates(createInitialPinStates())
+    setLastError(null)
   }, [])
 
   const setPinState = useCallback((pin: number, state: 'HIGH' | 'LOW') => {
@@ -118,6 +136,7 @@ export default function useSimulation(): UseSimulationReturn {
     simPinStates,
     simSerialOutput,
     isSimRunning,
+    lastError,
     startSimulation,
     stopSimulation,
     setPinState,
