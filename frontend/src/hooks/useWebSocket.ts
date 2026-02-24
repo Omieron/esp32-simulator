@@ -37,6 +37,8 @@ export interface UseWebSocketReturn {
     isRunning: boolean
     /** Last compile/status error message */
     lastError: string | null
+    /** Brief success message (e.g. after compile_success) */
+    lastSuccess: string | null
     /** Upload Arduino code and start execution */
     uploadCode: (code: string) => void
     /** Stop the running sketch */
@@ -70,9 +72,11 @@ export default function useWebSocket(): UseWebSocketReturn {
     const [isCompiling, setIsCompiling] = useState(false)
     const [isRunning, setIsRunning] = useState(false)
     const [lastError, setLastError] = useState<string | null>(null)
+    const [lastSuccess, setLastSuccess] = useState<string | null>(null)
 
     const wsRef = useRef<WebSocket | null>(null)
     const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const mountedRef = useRef(true)
 
     // ===== Send helper =====
@@ -121,8 +125,10 @@ export default function useWebSocket(): UseWebSocketReturn {
 
                 case 'compile_success':
                     setLastError(null)
+                    setLastSuccess('Compiled successfully')
                     setIsCompiling(false)
-                    // binPath available for future flash/simulation use
+                    // Clear success message after 3s (stored in ref for cleanup)
+                    successTimeoutRef.current = setTimeout(() => setLastSuccess(null), 3000)
                     break
 
                 case 'status':
@@ -188,9 +194,8 @@ export default function useWebSocket(): UseWebSocketReturn {
 
         return () => {
             mountedRef.current = false
-            if (reconnectTimer.current) {
-                clearTimeout(reconnectTimer.current)
-            }
+            if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
+            if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current)
             if (wsRef.current) {
                 wsRef.current.close()
                 wsRef.current = null
@@ -200,7 +205,12 @@ export default function useWebSocket(): UseWebSocketReturn {
 
     // ===== Public API =====
     const uploadCode = useCallback((code: string) => {
+        if (successTimeoutRef.current) {
+            clearTimeout(successTimeoutRef.current)
+            successTimeoutRef.current = null
+        }
         setLastError(null)
+        setLastSuccess(null)
         setSerialOutput([])
         setIsCompiling(true)
         send({ type: 'upload_code', code })
@@ -229,6 +239,7 @@ export default function useWebSocket(): UseWebSocketReturn {
         isCompiling,
         isRunning,
         lastError,
+        lastSuccess,
         uploadCode,
         stopExecution,
         setPin,

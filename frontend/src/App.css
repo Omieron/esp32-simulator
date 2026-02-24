@@ -216,3 +216,13 @@
   color: #e94560;
   font-family: var(--font-mono);
 }
+
+/* ===== Compile Success ===== */
+.compile-success {
+  padding: 6px 12px;
+  background: rgba(78, 204, 163, 0.1);
+  border-top: 1px solid var(--accent-success);
+  font-size: 0.75rem;
+  color: var(--accent-success);
+  font-family: var(--font-mono);
+}

@@ -116,6 +116,12 @@ function App() {
               <span>❌ {ws.lastError}</span>
             </div>
           )}
+          {/* Success display (brief) */}
+          {ws.lastSuccess && !ws.lastError && (
+            <div className="compile-success">
+              <span>✓ {ws.lastSuccess}</span>
+            </div>
+          )}
         </section>
 
         {/* Right Panel — Board */}
