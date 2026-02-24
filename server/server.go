@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/Omieron/esp32-simulator/compiler"
 	"github.com/Omieron/esp32-simulator/simulator"
 	"github.com/gorilla/websocket"
 )
@@ -152,13 +153,39 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 		switch msg.Type {
 		case "upload_code":
 			log.Printf("code uploaded (%d bytes)", len(msg.Code))
-			// TODO: compile & run the Arduino sketch
+			if msg.Code == "" {
+				sendJSON(conn, ServerMessage{
+					Type:  "compile_error",
+					Error: "No code to compile",
+				})
+				continue
+			}
+
+			result, err := compiler.Compile(msg.Code)
+			if err != nil || !result.Success {
+				errMsg := "Compilation failed"
+				if result != nil && result.ErrorMsg != "" {
+					errMsg = result.ErrorMsg
+				} else if err != nil {
+					errMsg = err.Error()
+				}
+				sendJSON(conn, ServerMessage{
+					Type:  "compile_error",
+					Error: errMsg,
+				})
+				continue
+			}
+
+			// Success: send bin path, then status and placeholder output
+			sendJSON(conn, ServerMessage{
+				Type:    "compile_success",
+				BinPath: result.BinPath,
+			})
 			sendJSON(conn, ServerMessage{
 				Type:    "status",
 				Running: true,
-				Message: "Running sketch...",
+				Message: "Compiled successfully. Running sketch...",
 			})
-			// Placeholder: echo a serial message
 			sendJSON(conn, ServerMessage{
 				Type: "serial_output",
 				Data: "ESP32-S3 Simulator Ready!",
