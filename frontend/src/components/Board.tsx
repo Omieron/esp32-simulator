@@ -25,7 +25,7 @@ export interface Wire {
     toComponentId: string // Component ID
     toComponentPin: string // Component Pin identifier
     color: string         // Wire color
-    waypoints?: { x: number; y: number }[] // Bend points
+    midX?: number         // Custom X position of the vertical segment
 }
 
 const WIRE_COLORS = ['#e94560', '#4ecca3', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
@@ -465,40 +465,44 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
     const [wiringMode, setWiringMode] = useState(false)
     const [wiringFrom, setWiringFrom] = useState<{ pin: number; x: number; y: number } | null>(null)
     const [wiringMouse, setWiringMouse] = useState<{ x: number; y: number } | null>(null)
-    const [draggingSegment, setDraggingSegment] = useState<{ wireId: string; index: number } | null>(null)
+    const [draggingSegment, setDraggingSegment] = useState<{ wireId: string; offsetX: number } | null>(null)
 
     // Dragging & selecting — '__board__' is the special ID for the board itself
     const [draggingId, setDraggingId] = useState<string | null>(null)
     const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null)
     const dragOffset = useRef({ x: 0, y: 0 })
 
-    // Convert screen coords to SVG coords
+    // Convert screen coords to SVG coords (browser native - handles viewBox, zoom, preserveAspectRatio)
     const screenToSVG = useCallback((clientX: number, clientY: number) => {
         const svg = svgRef.current
         if (!svg) return { x: 0, y: 0 }
-        const rect = svg.getBoundingClientRect()
-        const x = viewBox.x + ((clientX - rect.left) / rect.width) * viewBox.w
-        const y = viewBox.y + ((clientY - rect.top) / rect.height) * viewBox.h
-        return { x, y }
-    }, [viewBox])
+        const pt = svg.createSVGPoint()
+        pt.x = clientX
+        pt.y = clientY
+        const ctm = svg.getScreenCTM()
+        if (!ctm) return { x: 0, y: 0 }
+        const svgPt = pt.matrixTransform(ctm.inverse())
+        return { x: svgPt.x, y: svgPt.y }
+    }, [])
 
     // ===== Zoom =====
     const handleWheel = useCallback((e: React.WheelEvent<SVGSVGElement>) => {
         e.preventDefault()
-        const svg = svgRef.current
-        if (!svg) return
-        const rect = svg.getBoundingClientRect()
-        const mx = (e.clientX - rect.left) / rect.width
-        const my = (e.clientY - rect.top) / rect.height
+        const zoomCenter = screenToSVG(e.clientX, e.clientY)
         const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9
         setViewBox((vb) => {
             const newW = vb.w * zoomFactor
             const newH = vb.h * zoomFactor
             const newZoom = BOARD_WIDTH / newW
             if (newZoom < MIN_ZOOM || newZoom > MAX_ZOOM) return vb
-            return { x: vb.x + (vb.w - newW) * mx, y: vb.y + (vb.h - newH) * my, w: newW, h: newH }
+            return {
+                x: zoomCenter.x - (zoomCenter.x - vb.x) * (newW / vb.w),
+                y: zoomCenter.y - (zoomCenter.y - vb.y) * (newH / vb.h),
+                w: newW,
+                h: newH
+            }
         })
-    }, [])
+    }, [screenToSVG])
     // ===== Pin position helper =====
     const getPinPosition = useCallback((gpio: number): { x: number; y: number } | null => {
         for (let i = 0; i < LEFT_PINS.length; i++) {
@@ -527,32 +531,7 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
             const pos = screenToSVG(e.clientX, e.clientY)
             onWiresChange(wires.map(w => {
                 if (w.id === draggingSegment.wireId) {
-                    const pinPos = getPinPosition(w.fromPin)
-                    const comp = placedComponents.find(c => c.id === w.toComponentId)
-                    if (!pinPos || !comp) return w
-
-                    const offset = getComponentPinOffset(comp.type, w.toComponentPin)
-                    const endX = comp.x + offset.x
-                    const endY = comp.y + offset.y
-
-                    let newWps = w.waypoints ? JSON.parse(JSON.stringify(w.waypoints)) : [
-                        { x: pinPos.x + (endX - pinPos.x) / 2, y: pinPos.y },
-                        { x: pinPos.x + (endX - pinPos.x) / 2, y: pinPos.y + (endY - pinPos.y) / 2 },
-                        { x: pinPos.x + (endX - pinPos.x) / 2, y: pinPos.y + (endY - pinPos.y) / 2 },
-                        { x: pinPos.x + (endX - pinPos.x) / 2, y: endY }
-                    ]
-
-                    if (draggingSegment.index === 1) { // First V segment (drag left/right)
-                        newWps[0].x = pos.x
-                        newWps[1].x = pos.x
-                    } else if (draggingSegment.index === 2) { // Middle H segment (drag up/down)
-                        newWps[1].y = pos.y
-                        newWps[2].y = pos.y
-                    } else if (draggingSegment.index === 3) { // Last V segment (drag left/right)
-                        newWps[2].x = pos.x
-                        newWps[3].x = pos.x
-                    }
-                    return { ...w, waypoints: newWps }
+                    return { ...w, midX: pos.x - draggingSegment.offsetX }
                 }
                 return w
             }))
@@ -570,14 +549,13 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
             }
             return
         }
-        // Handle panning
-        if (!isPanning.current || !svgRef.current) return
-        const rect = svgRef.current.getBoundingClientRect()
-        const dx = (e.clientX - panStart.current.x) * (viewBox.w / rect.width)
-        const dy = (e.clientY - panStart.current.y) * (viewBox.h / rect.height)
-        setViewBox((vb) => ({ ...vb, x: vb.x - dx, y: vb.y - dy }))
+        // Handle panning (use screenToSVG for consistent coordinate conversion)
+        if (!isPanning.current) return
+        const start = screenToSVG(panStart.current.x, panStart.current.y)
+        const curr = screenToSVG(e.clientX, e.clientY)
+        setViewBox((vb) => ({ ...vb, x: vb.x - (curr.x - start.x), y: vb.y - (curr.y - start.y) }))
         panStart.current = { x: e.clientX, y: e.clientY }
-    }, [draggingId, screenToSVG, onComponentsChange, placedComponents, viewBox.w, viewBox.h, draggingSegment, onWiresChange, wires, getPinPosition])
+    }, [draggingId, screenToSVG, onComponentsChange, placedComponents, draggingSegment, onWiresChange, wires, getPinPosition])
 
     const handleMouseUp = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
         if (draggingSegment) {
@@ -730,9 +708,9 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
     }, [handleWirePinClick, onPinClick])
 
     // ===== Orthogonal wire preview path (Köşeli) =====
-    const wirePath = useCallback((x1: number, y1: number, x2: number, y2: number) => {
-        const midX = x1 + (x2 - x1) / 2
-        return `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`
+    const wirePath = useCallback((x1: number, y1: number, x2: number, y2: number, midX?: number) => {
+        const mx = midX !== undefined ? midX : x1 + (x2 - x1) / 2
+        return `M ${x1} ${y1} H ${mx} V ${y2} H ${x2}`
     }, [])
 
     // Prevent default wheel on container
@@ -854,11 +832,13 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
             <svg
                 ref={svgRef}
                 viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+                preserveAspectRatio="xMidYMid meet"
                 className="board-svg"
                 xmlns="http://www.w3.org/2000/svg"
                 onWheel={handleWheel}
                 onMouseDown={handleMouseDown}
                 onMouseMove={(e) => { handleMouseMove(e); handleWiringMouseMove(e) }}
+                onPointerMove={(e) => { handleMouseMove(e as React.MouseEvent); handleWiringMouseMove(e as React.MouseEvent) }}
                 onMouseUp={handleMouseUp}
                 onMouseLeave={handleMouseUp}
                 onClick={handleSVGClick}
@@ -938,26 +918,12 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                     const endX = comp.x + offset.x
                     const endY = comp.y + offset.y
 
-                    // Lazily derive or rebuild waypoints
-                    let activeWps = wire.waypoints ? JSON.parse(JSON.stringify(wire.waypoints)) : [
-                        { x: pinPos.x + (endX - pinPos.x) / 2, y: pinPos.y },
-                        { x: pinPos.x + (endX - pinPos.x) / 2, y: pinPos.y + (endY - pinPos.y) / 2 },
-                        { x: pinPos.x + (endX - pinPos.x) / 2, y: pinPos.y + (endY - pinPos.y) / 2 },
-                        { x: pinPos.x + (endX - pinPos.x) / 2, y: endY }
-                    ]
+                    const mx = wire.midX !== undefined ? wire.midX : pinPos.x + (endX - pinPos.x) / 2
+                    const path = wirePath(pinPos.x, pinPos.y, endX, endY, wire.midX)
 
-                    // Ensure the initial and final Y are strict to maintain orthogonality during panning/drag
-                    activeWps[0].y = pinPos.y
-                    activeWps[3].y = endY
-
-                    const pts = [pinPos, ...activeWps, { x: endX, y: endY }]
-
-                    let path = `M ${pts[0].x} ${pts[0].y}`
-                    for (let i = 1; i < pts.length; i++) {
-                        path += ` L ${pts[i].x} ${pts[i].y}`
-                    }
-
-                    const DRAG_MODES: Record<number, string> = { 1: 'ew-resize', 2: 'ns-resize', 3: 'ew-resize' }
+                    const cx = mx
+                    const cy = pinPos.y + (endY - pinPos.y) / 2
+                    const vLen = Math.abs(endY - pinPos.y)
 
                     return (
                         <g key={wire.id}
@@ -977,24 +943,22 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                             <circle cx={pinPos.x} cy={pinPos.y} r={4} fill={wire.color} stroke="#000" strokeWidth={1} />
                             <circle cx={endX} cy={endY} r={4} fill={wire.color} stroke="#000" strokeWidth={1} />
 
-                            {/* Middle Drag Segments (Handles) */}
-                            {!deleteMode && [1, 2, 3].map(segIdx => {
-                                const pA = pts[segIdx]
-                                const pB = pts[segIdx + 1]
-                                // Skip drawing handle for segments with 0 length
-                                if (Math.abs(pA.x - pB.x) < 2 && Math.abs(pA.y - pB.y) < 2) return null
-
-                                const cx = (pA.x + pB.x) / 2
-                                const cy = (pA.y + pB.y) / 2
-
-                                return <circle key={segIdx} cx={cx} cy={cy} r={5} fill={wire.color} stroke="#fff" strokeWidth={1.5}
-                                    style={{ cursor: DRAG_MODES[segIdx] }}
-                                    onMouseDown={(e) => {
+                            {/* Middle Vertical Drag Handle */}
+                            {!deleteMode && vLen >= 2 && (
+                                <circle cx={cx} cy={cy} r={5} fill={wire.color} stroke="#fff" strokeWidth={1.5}
+                                    style={{ cursor: 'ew-resize' }}
+                                    onPointerDown={(e) => {
                                         e.stopPropagation()
-                                        setDraggingSegment({ wireId: wire.id, index: segIdx })
+                                        (e.currentTarget as Element).setPointerCapture(e.pointerId)
+                                        const pos = screenToSVG(e.clientX, e.clientY)
+                                        setDraggingSegment({ wireId: wire.id, offsetX: pos.x - mx })
+                                    }}
+                                    onPointerUp={(e) => {
+                                        (e.currentTarget as Element).releasePointerCapture(e.pointerId)
+                                        setDraggingSegment(null)
                                     }}
                                 />
-                            })}
+                            )}
                         </g>
                     )
                 })}
