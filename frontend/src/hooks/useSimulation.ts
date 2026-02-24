@@ -4,9 +4,13 @@ import type { PinState } from '../components/pinDefinitions'
 
 // ===== Hook Return Type =====
 
+const MAX_SERIAL_LINES = 500
+
 export interface UseSimulationReturn {
   /** Pin states during JS simulation (used when isSimRunning) */
   simPinStates: Map<number, PinState>
+  /** Serial output from Serial.println during JS simulation */
+  simSerialOutput: string[]
   /** Whether JS simulation is currently running */
   isSimRunning: boolean
   /** Start a test simulation (blinks GPIO 2). Will be replaced by transpiled code in Task 6. */
@@ -15,6 +19,8 @@ export interface UseSimulationReturn {
   stopSimulation: () => void
   /** Update pin state from outside (e.g. button press). For Task 3+ integration. */
   setPinState: (pin: number, state: 'HIGH' | 'LOW') => void
+  /** Clear serial output */
+  clearSimSerial: () => void
 }
 
 // ===== Initial Pin State =====
@@ -33,6 +39,7 @@ export default function useSimulation(): UseSimulationReturn {
   const [simPinStates, setSimPinStates] = useState<Map<number, PinState>>(
     createInitialPinStates
   )
+  const [simSerialOutput, setSimSerialOutput] = useState<string[]>([])
   const [isSimRunning, setIsSimRunning] = useState(false)
   const runningRef = useRef(false)
   const runtimeRef = useRef<ReturnType<typeof createRuntime> | null>(null)
@@ -49,6 +56,14 @@ export default function useSimulation(): UseSimulationReturn {
           return next
         })
       },
+      onSerial: (data: string) => {
+        setSimSerialOutput((prev) => {
+          const lines = [...prev, data]
+          return lines.length > MAX_SERIAL_LINES
+            ? lines.slice(lines.length - MAX_SERIAL_LINES)
+            : lines
+        })
+      },
     })
 
     runtimeRef.current = runtime
@@ -63,12 +78,14 @@ export default function useSimulation(): UseSimulationReturn {
       return next
     })
 
+    setSimSerialOutput([])
     setIsSimRunning(true)
     runningRef.current = true
 
     // Test: blink GPIO 2 using async delay (same pattern as transpiled setup/loop)
     const runBlink = async () => {
       runtime.pinMode(2, runtime.OUTPUT)
+      runtime.Serial.println('ESP32-S3 Simulator Ready!')
       let high = true
       while (runningRef.current) {
         runtime.digitalWrite(2, high ? runtime.HIGH : runtime.LOW)
@@ -93,11 +110,17 @@ export default function useSimulation(): UseSimulationReturn {
     }
   }, [])
 
+  const clearSimSerial = useCallback(() => {
+    setSimSerialOutput([])
+  }, [])
+
   return {
     simPinStates,
+    simSerialOutput,
     isSimRunning,
     startSimulation,
     stopSimulation,
     setPinState,
+    clearSimSerial,
   }
 }

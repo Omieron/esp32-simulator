@@ -25,6 +25,10 @@ function App() {
   // Pin states: use WebSocket only when backend is running, else sim (avoids stale pin state after Stop Sim)
   const displayPinStates = ws.isRunning ? ws.pinStates : sim.simPinStates
 
+  // Serial output: same logic as pin states
+  const displaySerialOutput = ws.isRunning ? ws.serialOutput : sim.simSerialOutput
+  const clearSerial = ws.isRunning ? ws.clearSerial : sim.clearSimSerial
+
   // Placed components on the board
   const [placedComponents, setPlacedComponents] = useState<PlacedComponent[]>([])
 
@@ -121,14 +125,14 @@ function App() {
           </div>
 
           {/* Serial Output */}
-          {ws.serialOutput.length > 0 && (
+          {displaySerialOutput.length > 0 && (
             <div className="serial-monitor">
               <div className="serial-monitor__header">
                 <span>📟 Serial Monitor</span>
-                <button className="serial-monitor__clear" onClick={ws.clearSerial}>Clear</button>
+                <button className="serial-monitor__clear" onClick={clearSerial}>Clear</button>
               </div>
               <div className="serial-monitor__output">
-                {ws.serialOutput.map((line, i) => (
+                {displaySerialOutput.map((line, i) => (
                   <div key={i} className="serial-monitor__line">{line}</div>
                 ))}
               </div>
