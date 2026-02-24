@@ -40,6 +40,23 @@ export interface ArduinoRuntime {
   INPUT_PULLUP: number
 }
 
+/** Snapshot item for a single pin (used by getPinSnapshot). */
+export interface PinSnapshotItem {
+  number: number
+  mode: PinMode
+  state: PinState
+}
+
+/** Host API: methods for the simulator host (App), not for user code. */
+export interface RuntimeHostAPI {
+  /** Update pin state from outside (e.g. button press). Used in Task 3. */
+  setPinState: (pin: number, state: PinState) => void
+  /** Get full pin state for UI sync (startup or full refresh). */
+  getPinSnapshot: () => PinSnapshotItem[]
+}
+
+export type SimulatorRuntime = ArduinoRuntime & RuntimeHostAPI
+
 // ===== Configuration =====
 
 const MIN_PIN = 0
@@ -66,8 +83,9 @@ function validatePin(pin: number): void {
 /**
  * Creates an Arduino-compatible runtime with the given callbacks.
  * The returned object can be injected into transpiled user code.
+ * Includes host API (setPinState, getPinSnapshot) for simulator integration.
  */
-export function createRuntime(callbacks: RuntimeCallbacks = {}): ArduinoRuntime {
+export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntime {
   const { onPinChange, onSerial } = callbacks
 
   // Internal pin state storage
@@ -126,6 +144,21 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): ArduinoRuntime 
     },
   }
 
+  // Host API: for external updates (e.g. button press) and UI sync
+  const setPinState = (pin: number, state: PinState): void => {
+    validatePin(pin)
+    const idx = pin - MIN_PIN
+    pins[idx].state = state
+    onPinChange?.(pin, pins[idx].state, pins[idx].mode)
+  }
+
+  const getPinSnapshot = (): PinSnapshotItem[] =>
+    pins.map((p, i) => ({
+      number: i + MIN_PIN,
+      mode: p.mode,
+      state: p.state,
+    }))
+
   return {
     pinMode,
     digitalWrite,
@@ -138,5 +171,7 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): ArduinoRuntime 
     INPUT,
     OUTPUT,
     INPUT_PULLUP,
+    setPinState,
+    getPinSnapshot,
   }
 }
