@@ -3,6 +3,7 @@ import MonacoEditor, { DEFAULT_SKETCH } from './components/MonacoEditor'
 import Board from './components/Board'
 import type { PlacedComponent, Wire } from './components/Board'
 import useWebSocket from './hooks/useWebSocket'
+import useSimulation from './hooks/useSimulation'
 import './components/MonacoEditor.css'
 import './components/Board.css'
 import './App.css'
@@ -18,6 +19,12 @@ function App() {
   // WebSocket connection to Go backend
   const ws = useWebSocket()
 
+  // JS simulation (frontend-only, no backend)
+  const sim = useSimulation()
+
+  // Pin states: use WebSocket only when backend is running, else sim (avoids stale pin state after Stop Sim)
+  const displayPinStates = ws.isRunning ? ws.pinStates : sim.simPinStates
+
   // Placed components on the board
   const [placedComponents, setPlacedComponents] = useState<PlacedComponent[]>([])
 
@@ -26,8 +33,8 @@ function App() {
 
   const handlePinClick = useCallback((gpio: number) => {
     setSelectedPin((prev) => (prev === gpio ? null : gpio))
-    console.log(`Pin clicked: GPIO${gpio}`, ws.pinStates.get(gpio))
-  }, [ws.pinStates])
+    console.log(`Pin clicked: GPIO${gpio}`, displayPinStates.get(gpio))
+  }, [displayPinStates])
 
   const handleUpload = useCallback(() => {
     ws.uploadCode(code)
@@ -89,6 +96,24 @@ function App() {
                   ⏹ Stop
                 </button>
               )}
+              {!sim.isSimRunning ? (
+                <button
+                  className="editor-toolbar__btn"
+                  onClick={sim.startSimulation}
+                  title="Run JS simulation (blinks GPIO 2)"
+                >
+                  ⚡ Simulate
+                </button>
+              ) : (
+                <button
+                  className="editor-toolbar__btn"
+                  onClick={sim.stopSimulation}
+                  style={{ background: '#e94560', color: 'white', border: '1px solid #e94560' }}
+                  title="Stop JS simulation"
+                >
+                  ⏹ Stop Sim
+                </button>
+              )}
             </div>
           </div>
           <div className="panel__content" style={{ padding: 0 }}>
@@ -141,7 +166,7 @@ function App() {
           </div>
           <div className="panel__content" style={{ padding: 0 }}>
             <Board
-              pinStates={ws.pinStates}
+              pinStates={displayPinStates}
               onPinClick={handlePinClick}
               selectedPin={selectedPin}
               placedComponents={placedComponents}
