@@ -8,8 +8,10 @@ import (
 )
 
 const (
-	sketchName = "sketch"
-	fqbn       = "esp32:esp32:esp32s3"
+	sketchName       = "sketch"
+	fqbn             = "esp32:esp32:esp32s3"
+	esp32PackageURL  = "https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json"
+	platformNotFound = "platform not installed"
 )
 
 // CompileResult holds the outcome of a compile attempt.
@@ -58,21 +60,18 @@ func Compile(code string) (*CompileResult, error) {
 	// 3. Build path for arduino-cli output
 	buildPath := filepath.Join(tmpDir, "build")
 
-	// 4. Run arduino-cli compile
-	cmd := exec.Command(arduinoCli, "compile",
-		"-b", fqbn,
-		"--build-path", buildPath,
-		sketchDir,
-	)
-
-	var stdout, stderr strings.Builder
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err = cmd.Run()
-	result.Stdout = stdout.String()
-	result.Stderr = stderr.String()
-
+	// 4. Run arduino-cli compile (retry after installing platform if needed)
+	err = runCompile(arduinoCli, sketchDir, buildPath, result)
+	if err != nil {
+		// If platform not installed, install and retry
+		if strings.Contains(result.Stderr, platformNotFound) || strings.Contains(result.ErrorMsg, platformNotFound) {
+			if installErr := ensureESP32Platform(arduinoCli); installErr != nil {
+				result.ErrorMsg = "ESP32 platform install failed: " + installErr.Error()
+				return result, installErr
+			}
+			err = runCompile(arduinoCli, sketchDir, buildPath, result)
+		}
+	}
 	if err != nil {
 		result.ErrorMsg = "compilation failed"
 		if result.Stderr != "" {
@@ -115,6 +114,35 @@ func Compile(code string) (*CompileResult, error) {
 	result.Success = true
 	result.BinPath = persistentPath
 	return result, nil
+}
+
+// runCompile executes arduino-cli compile and fills result.Stdout/Stderr.
+func runCompile(arduinoCli, sketchDir, buildPath string, result *CompileResult) error {
+	cmd := exec.Command(arduinoCli, "compile",
+		"-b", fqbn,
+		"--build-path", buildPath,
+		sketchDir,
+	)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	result.Stdout = stdout.String()
+	result.Stderr = stderr.String()
+	return err
+}
+
+// ensureESP32Platform installs the ESP32 core if not present.
+func ensureESP32Platform(arduinoCli string) error {
+	urlFlag := "--additional-urls=" + esp32PackageURL
+	// Update index
+	cmd := exec.Command(arduinoCli, "core", "update-index", urlFlag)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	// Install esp32:esp32
+	cmd = exec.Command(arduinoCli, "core", "install", "esp32:esp32", urlFlag)
+	return cmd.Run()
 }
 
 // findBinFile walks the build directory and returns the path to the first .bin file.
