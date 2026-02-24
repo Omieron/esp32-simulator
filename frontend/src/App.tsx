@@ -22,12 +22,10 @@ function App() {
   // JS simulation (frontend-only, no backend)
   const sim = useSimulation()
 
-  // Pin states: use WebSocket only when backend is running, else sim (avoids stale pin state after Stop Sim)
-  const displayPinStates = ws.isRunning ? ws.pinStates : sim.simPinStates
-
-  // Serial output: same logic as pin states
-  const displaySerialOutput = ws.isRunning ? ws.serialOutput : sim.simSerialOutput
-  const clearSerial = ws.isRunning ? ws.clearSerial : sim.clearSimSerial
+  // Pin states and serial: from JS simulation (onPinChange, onSerial callbacks)
+  const displayPinStates = sim.simPinStates
+  const displaySerialOutput = sim.simSerialOutput
+  const clearSerial = sim.clearSimSerial
 
   // Placed components on the board
   const [placedComponents, setPlacedComponents] = useState<PlacedComponent[]>([])
@@ -40,13 +38,14 @@ function App() {
     console.log(`Pin clicked: GPIO${gpio}`, displayPinStates.get(gpio))
   }, [displayPinStates])
 
+  // Upload & Run: transpile → runtime → run (JS simulation)
   const handleUpload = useCallback(() => {
-    ws.uploadCode(code)
-  }, [ws, code])
+    sim.startSimulation(code)
+  }, [sim, code])
 
   const handleStop = useCallback(() => {
-    ws.stopExecution()
-  }, [ws])
+    sim.stopSimulation()
+  }, [sim])
 
   // Status dot color
   const statusColor =
@@ -77,17 +76,11 @@ function App() {
           <div className="panel__header">
             <span>📝 Code Editor</span>
             <div className="editor-toolbar" style={{ display: 'inline-flex', marginLeft: '12px', padding: 0, background: 'transparent', border: 'none', gap: '6px', alignItems: 'center' }}>
-              {ws.isCompiling ? (
-                <span className="compile-spinner" title="Compiling...">
-                  <span className="compile-spinner__ring" />
-                  <span className="compile-spinner__text">Compiling...</span>
-                </span>
-              ) : !ws.isRunning ? (
+              {!sim.isSimRunning ? (
                 <button
                   className="editor-toolbar__btn editor-toolbar__btn--primary"
                   onClick={handleUpload}
-                  disabled={ws.status !== 'connected'}
-                  style={{ opacity: ws.status !== 'connected' ? 0.5 : 1 }}
+                  title="Transpile Arduino code and run in browser"
                 >
                   ▶ Upload &amp; Run
                 </button>
@@ -96,26 +89,9 @@ function App() {
                   className="editor-toolbar__btn"
                   onClick={handleStop}
                   style={{ background: '#e94560', color: 'white', border: '1px solid #e94560' }}
+                  title="Stop simulation"
                 >
                   ⏹ Stop
-                </button>
-              )}
-              {!sim.isSimRunning ? (
-                <button
-                  className="editor-toolbar__btn"
-                  onClick={() => sim.startSimulation(code)}
-                  title="Run JS simulation (transpiled Arduino code)"
-                >
-                  ⚡ Simulate
-                </button>
-              ) : (
-                <button
-                  className="editor-toolbar__btn"
-                  onClick={sim.stopSimulation}
-                  style={{ background: '#e94560', color: 'white', border: '1px solid #e94560' }}
-                  title="Stop JS simulation"
-                >
-                  ⏹ Stop Sim
                 </button>
               )}
             </div>
@@ -139,16 +115,10 @@ function App() {
             </div>
           )}
 
-          {/* Error display */}
-          {(ws.lastError || sim.lastError) && (
+          {/* Error display (transpile or runtime) */}
+          {sim.lastError && (
             <div className="compile-error">
-              <span>❌ {ws.lastError || sim.lastError}</span>
-            </div>
-          )}
-          {/* Success display (brief) */}
-          {ws.lastSuccess && !ws.lastError && (
-            <div className="compile-success">
-              <span>✓ {ws.lastSuccess}</span>
+              <span>❌ {sim.lastError}</span>
             </div>
           )}
         </section>
