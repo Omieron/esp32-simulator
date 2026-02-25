@@ -5,7 +5,7 @@ import { BuzzerAudio } from '../simulator/buzzer'
 
 // ===== Placed Component Types =====
 
-export type ComponentType = 'led' | 'button' | 'oled' | 'buzzer'
+export type ComponentType = 'led' | 'button' | 'oled' | 'buzzer' | 'potentiometer'
 
 export interface PlacedComponent {
     id: string
@@ -16,6 +16,7 @@ export interface PlacedComponent {
     label: string
     on: boolean  // LED: lit state, Button: pressed state, OLED: power state
     screenText?: string  // OLED: text to display
+    value?: number       // Potentiometer: analog value 0-4095
 }
 
 // ===== Wire Types =====
@@ -46,6 +47,10 @@ export function getComponentPinOffset(type: ComponentType, pinId: string): { x: 
     } else if (type === 'buzzer') {
         if (pinId === 'positive') return { x: -6, y: 42 }
         if (pinId === 'negative') return { x: 6, y: 42 }
+    } else if (type === 'potentiometer') {
+        if (pinId === 'vcc') return { x: -16, y: 44 }
+        if (pinId === 'sig') return { x: 0, y: 44 }
+        if (pinId === 'gnd') return { x: 16, y: 44 }
     } else if (type === 'oled') {
         const y = 55 // h/2 + 5
         if (pinId === 'gnd') return { x: -30, y }
@@ -74,6 +79,8 @@ export interface BoardProps {
     displayBuffer?: Uint8Array | null
     /** Active buzzer tone from simulation (pin + frequency), null when silent */
     activeTone?: { pin: number; frequency: number } | null
+    /** Fired when a potentiometer value changes on a wired GPIO */
+    onAnalogChange?: (gpio: number, value: number) => void
 }
 
 // ===== Board Layout Constants =====
@@ -280,6 +287,24 @@ function getBuzzerStateFromWires(
     }
 
     return { active: false, frequency: 0 }
+}
+
+// ===== Potentiometer: check wiring and return connected GPIO for SIG pin =====
+function getPotWiredGpio(compId: string, wires: Wire[]): number | null {
+    const pWires = wires.filter(w => w.toComponentId === compId)
+    const vccWire = pWires.find(w => w.toComponentPin === 'vcc')
+    const gndWire = pWires.find(w => w.toComponentPin === 'gnd')
+    const sigWire = pWires.find(w => w.toComponentPin === 'sig')
+
+    if (!vccWire || !gndWire || !sigWire) return null
+
+    const vccOk = VCC_PINS.includes(vccWire.fromPin)
+    const gndOk = GND_PINS.includes(gndWire.fromPin)
+    if (!vccOk || !gndOk) return null
+
+    // SIG must connect to a real GPIO (not power/gnd)
+    if (sigWire.fromPin >= 0) return sigWire.fromPin
+    return null
 }
 
 // ===== Placed LED SVG Element =====
@@ -702,6 +727,161 @@ function PlacedBuzzer({ comp, buzzerState, onDragStart, onSelect, isDragging, is
     )
 }
 
+// ===== Placed Potentiometer SVG Element =====
+interface PlacedPotentiometerProps {
+    comp: PlacedComponent
+    wiredGpio: number | null
+    onDragStart: (id: string, e: React.MouseEvent) => void
+    onSelect: (id: string) => void
+    isDragging: boolean
+    isSelected: boolean
+    wiringMode: boolean
+    onPinClick: (compId: string, pinId: string) => void
+    onValueChange: (id: string, value: number) => void
+}
+
+function PlacedPotentiometer({ comp, wiredGpio, onDragStart, onSelect, isDragging, isSelected, wiringMode, onPinClick, onValueChange }: PlacedPotentiometerProps) {
+    const r = 30
+    const value = comp.value ?? 0
+    const angle = -135 + (value / 4095) * 270
+    const knobR = r * 0.38
+    const draggingKnob = useRef(false)
+
+    const handleKnobPointer = useCallback((e: React.PointerEvent) => {
+        const svg = (e.target as SVGElement).ownerSVGElement
+        if (!svg) return
+        const pt = svg.createSVGPoint()
+        pt.x = e.clientX
+        pt.y = e.clientY
+        const ctm = svg.getScreenCTM()
+        if (!ctm) return
+        const svgPt = pt.matrixTransform(ctm.inverse())
+        const dx = svgPt.x - comp.x
+        const dy = svgPt.y - comp.y
+        const rad = Math.atan2(dx, -dy)
+        const deg = rad * (180 / Math.PI)
+        const clamped = Math.max(-135, Math.min(135, deg))
+        const newValue = Math.round(((clamped + 135) / 270) * 4095)
+        onValueChange(comp.id, newValue)
+    }, [comp.x, comp.y, comp.id, onValueChange])
+
+    return (
+        <g
+            transform={`translate(${comp.x}, ${comp.y})`}
+            style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+            onMouseDown={(e) => { e.stopPropagation(); onSelect(comp.id); onDragStart(comp.id, e) }}
+        >
+            {/* Selection ring */}
+            {isSelected && (
+                <circle cx={0} cy={0} r={r + 12} fill="none" stroke="#3b82f6" strokeWidth={2.5}
+                    strokeDasharray="6 4" opacity={0.8}>
+                    <animate attributeName="stroke-dashoffset" values="0;20" dur="1s" repeatCount="indefinite" />
+                </circle>
+            )}
+
+            {/* Housing */}
+            <circle cx={0} cy={0} r={r + 4} fill="#1a1a2e" stroke="#555" strokeWidth={2} />
+            <circle cx={0} cy={0} r={r} fill={comp.color || '#1a3d6b'} stroke="#444" strokeWidth={1.5} />
+
+            {/* Track arc (270 degree sweep) */}
+            {(() => {
+                const tR = r * 0.72
+                const sA = -135 * (Math.PI / 180) - Math.PI / 2
+                const eA = 135 * (Math.PI / 180) - Math.PI / 2
+                const x1 = tR * Math.cos(sA), y1 = tR * Math.sin(sA)
+                const x2 = tR * Math.cos(eA), y2 = tR * Math.sin(eA)
+                return <path d={`M ${x1} ${y1} A ${tR} ${tR} 0 1 1 ${x2} ${y2}`}
+                    fill="none" stroke="#444" strokeWidth={3} strokeLinecap="round" />
+            })()}
+
+            {/* Active arc */}
+            {value > 0 && (() => {
+                const tR = r * 0.72
+                const sA = -135 * (Math.PI / 180) - Math.PI / 2
+                const cA = angle * (Math.PI / 180) - Math.PI / 2
+                const x1 = tR * Math.cos(sA), y1 = tR * Math.sin(sA)
+                const x2 = tR * Math.cos(cA), y2 = tR * Math.sin(cA)
+                const sweep = angle + 135
+                const large = sweep > 180 ? 1 : 0
+                return <path d={`M ${x1} ${y1} A ${tR} ${tR} 0 ${large} 1 ${x2} ${y2}`}
+                    fill="none" stroke="#4ecca3" strokeWidth={3} strokeLinecap="round" />
+            })()}
+
+            {/* Tick marks */}
+            {[-135, 0, 135].map((deg, i) => {
+                const rad = deg * (Math.PI / 180) - Math.PI / 2
+                const i1 = r * 0.82, o1 = r * 0.95
+                return <line key={i}
+                    x1={i1 * Math.cos(rad)} y1={i1 * Math.sin(rad)}
+                    x2={o1 * Math.cos(rad)} y2={o1 * Math.sin(rad)}
+                    stroke="#666" strokeWidth={1.5} />
+            })}
+
+            {/* Knob */}
+            <circle cx={0} cy={0} r={knobR} fill="#333" stroke="#666" strokeWidth={1.5}
+                style={{ cursor: 'grab' }}
+                onPointerDown={(e) => {
+                    e.stopPropagation()
+                    draggingKnob.current = true
+                    ;(e.target as Element).setPointerCapture(e.pointerId)
+                    handleKnobPointer(e)
+                }}
+                onPointerMove={(e) => { if (draggingKnob.current) handleKnobPointer(e) }}
+                onPointerUp={(e) => {
+                    draggingKnob.current = false
+                    ;(e.target as Element).releasePointerCapture(e.pointerId)
+                }}
+            />
+
+            {/* Knob indicator */}
+            <line x1={0} y1={0}
+                x2={(knobR - 4) * Math.sin(angle * Math.PI / 180)}
+                y2={-(knobR - 4) * Math.cos(angle * Math.PI / 180)}
+                stroke="#4ecca3" strokeWidth={2.5} strokeLinecap="round"
+                style={{ pointerEvents: 'none' }} />
+            <circle cx={0} cy={0} r={3} fill="#4ecca3" style={{ pointerEvents: 'none' }} />
+
+            {/* Value display */}
+            <text x={0} y={r + 58} textAnchor="middle" fontSize={7}
+                fontFamily="'JetBrains Mono', monospace"
+                fill={wiredGpio !== null ? '#4ecca3' : '#666'}>
+                {value} / 4095
+            </text>
+
+            {/* Metal legs */}
+            <rect x={-18} y={r + 2} width={4} height={16} fill="#999" rx={1} />
+            <rect x={-2} y={r + 2} width={4} height={16} fill="#999" rx={1} />
+            <rect x={14} y={r + 2} width={4} height={16} fill="#999" rx={1} />
+
+            {/* Connection pins: VCC, SIG, GND */}
+            <g>
+                <circle cx={-16} cy={r + 14} r={7} fill="#e5e7eb" stroke="#b48600" strokeWidth={1.5}
+                    cursor={wiringMode ? "crosshair" : "default"}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, 'vcc') }} />
+                <text x={-16} y={r + 28} textAnchor="middle" fontSize={5} fill="#888"
+                    fontFamily="'Inter', sans-serif">VCC</text>
+            </g>
+            <g>
+                <circle cx={0} cy={r + 14} r={7} fill="#e5e7eb" stroke="#4ecca3" strokeWidth={1.5}
+                    cursor={wiringMode ? "crosshair" : "default"}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, 'sig') }} />
+                <text x={0} y={r + 28} textAnchor="middle" fontSize={5} fill="#888"
+                    fontFamily="'Inter', sans-serif">SIG</text>
+            </g>
+            <g>
+                <circle cx={16} cy={r + 14} r={7} fill="#e5e7eb" stroke="#6b7280" strokeWidth={1.5}
+                    cursor={wiringMode ? "crosshair" : "default"}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, 'gnd') }} />
+                <text x={16} y={r + 28} textAnchor="middle" fontSize={5} fill="#888"
+                    fontFamily="'Inter', sans-serif">GND</text>
+            </g>
+        </g>
+    )
+}
+
 // ===== Component Palette Items (grouped by category) =====
 interface PaletteCategory {
     title: string
@@ -725,6 +905,12 @@ const PALETTE_CATEGORIES: PaletteCategory[] = [
             { type: 'button', label: 'Push Button', icon: '⬛', defaultColor: '#555' },
             { type: 'button', label: 'Red Button', icon: '🟥', defaultColor: '#cc3333' },
             { type: 'button', label: 'Blue Button', icon: '🟦', defaultColor: '#3366cc' },
+        ],
+    },
+    {
+        title: '🎛️ Sensors',
+        items: [
+            { type: 'potentiometer', label: 'Potentiometer', icon: '🎚️', defaultColor: '#1a3d6b' },
         ],
     },
     {
@@ -752,7 +938,7 @@ function nextId() { return `comp-${++componentIdCounter}` }
 
 const BUTTON_DEBOUNCE_MS = 30
 
-export default function Board({ pinStates, onPinClick, selectedPin, placedComponents, onComponentsChange, wires, onWiresChange, onButtonPress, displayBuffer, activeTone }: BoardProps) {
+export default function Board({ pinStates, onPinClick, selectedPin, placedComponents, onComponentsChange, wires, onWiresChange, onButtonPress, displayBuffer, activeTone, onAnalogChange }: BoardProps) {
     const [hoveredPin, setHoveredPin] = useState<number | null>(null)
 
     // Debounce state per button: tracks last fired state and timestamp per component
@@ -1384,6 +1570,19 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                         <PlacedBuzzer
                             {...commonProps}
                             buzzerState={getBuzzerStateFromWires(comp.id, wires, pinStates, activeTone)}
+                        />
+                    )
+                    if (comp.type === 'potentiometer') return (
+                        <PlacedPotentiometer
+                            {...commonProps}
+                            wiredGpio={getPotWiredGpio(comp.id, wires)}
+                            onValueChange={(id, val) => {
+                                onComponentsChange(placedComponents.map(c =>
+                                    c.id === id ? { ...c, value: val } : c
+                                ))
+                                const gpio = getPotWiredGpio(id, wires)
+                                if (gpio !== null) onAnalogChange?.(gpio, val)
+                            }}
                         />
                     )
                     return null
