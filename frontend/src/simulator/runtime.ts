@@ -27,6 +27,8 @@ export interface RuntimeCallbacks {
   onPinChange?: (pin: number, state: PinState, mode: PinMode) => void
   onSerial?: (data: string) => void
   onDisplayUpdate?: (buffer: Uint8Array) => void
+  /** Fired when tone() or noTone() is called. frequency=null means stopped. */
+  onToneChange?: (pin: number, frequency: number | null) => void
 }
 
 export interface ArduinoRuntime {
@@ -35,6 +37,8 @@ export interface ArduinoRuntime {
   digitalRead: (pin: number) => number
   analogWrite: (pin: number, value: number) => void
   delay: (ms: number) => Promise<void>
+  tone: (pin: number, frequency: number, duration?: number) => void
+  noTone: (pin: number) => void
   Serial: { begin: (baud: number) => void; println: (msg: string | number) => void }
   Wire: { begin: () => void }
   display: OLEDDisplay
@@ -94,7 +98,7 @@ function validatePin(pin: number): void {
  * Includes host API (setPinState, getPinSnapshot) for simulator integration.
  */
 export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntime {
-  const { onPinChange, onSerial, onDisplayUpdate } = callbacks
+  const { onPinChange, onSerial, onDisplayUpdate, onToneChange } = callbacks
 
   // Internal pin state storage
   const pins: PinData[] = Array.from({ length: TOTAL_PINS }, () => ({
@@ -160,6 +164,44 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
     },
   }
 
+  // Active tone timers (for duration-based auto-stop)
+  const toneTimers = new Map<number, ReturnType<typeof setTimeout>>()
+
+  const tone = (pin: number, frequency: number, duration?: number): void => {
+    validatePin(pin)
+    const idx = pin - MIN_PIN
+    pins[idx].mode = 'OUTPUT'
+    pins[idx].state = 'HIGH'
+    onPinChange?.(pin, 'HIGH', 'OUTPUT')
+    onToneChange?.(pin, frequency)
+
+    // Clear any existing auto-stop timer for this pin
+    const existing = toneTimers.get(pin)
+    if (existing) clearTimeout(existing)
+
+    // If duration is specified, auto-stop after that many milliseconds
+    if (duration && duration > 0) {
+      toneTimers.set(pin, setTimeout(() => {
+        noTone(pin)
+        toneTimers.delete(pin)
+      }, duration))
+    }
+  }
+
+  const noTone = (pin: number): void => {
+    validatePin(pin)
+    const idx = pin - MIN_PIN
+    pins[idx].state = 'LOW'
+    onPinChange?.(pin, 'LOW', pins[idx].mode)
+    onToneChange?.(pin, null)
+
+    const existing = toneTimers.get(pin)
+    if (existing) {
+      clearTimeout(existing)
+      toneTimers.delete(pin)
+    }
+  }
+
   const Wire = {
     begin: (): void => {},
   }
@@ -186,6 +228,8 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
     digitalWrite,
     digitalRead,
     analogWrite,
+    tone,
+    noTone,
     delay,
     Serial,
     Wire,
