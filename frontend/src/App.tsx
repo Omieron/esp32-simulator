@@ -154,6 +154,7 @@ function App() {
               onWiresChange={setWires}
               onButtonPress={handleButtonPress}
               displayBuffer={sim.displayBuffer}
+              activeTone={sim.activeTone}
             />
           </div>
         </section>

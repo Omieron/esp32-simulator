@@ -1,10 +1,11 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { LEFT_PINS, RIGHT_PINS } from './pinDefinitions'
 import type { PinState, PinDefinition } from './pinDefinitions'
+import { BuzzerAudio } from '../simulator/buzzer'
 
 // ===== Placed Component Types =====
 
-export type ComponentType = 'led' | 'button' | 'oled'
+export type ComponentType = 'led' | 'button' | 'oled' | 'buzzer'
 
 export interface PlacedComponent {
     id: string
@@ -42,6 +43,9 @@ export function getComponentPinOffset(type: ComponentType, pinId: string): { x: 
         if (pinId === 'tr') return { x: 48, y: -8.5 }
         if (pinId === 'bl') return { x: -48, y: 9.5 }
         if (pinId === 'br') return { x: 48, y: 9.5 }
+    } else if (type === 'buzzer') {
+        if (pinId === 'positive') return { x: -6, y: 42 }
+        if (pinId === 'negative') return { x: 6, y: 42 }
     } else if (type === 'oled') {
         const y = 55 // h/2 + 5
         if (pinId === 'gnd') return { x: -30, y }
@@ -68,6 +72,8 @@ export interface BoardProps {
     onButtonPress?: (gpio: number, state: 'HIGH' | 'LOW') => void
     /** OLED display pixel buffer (128×64, each byte 0 or 1) from simulation */
     displayBuffer?: Uint8Array | null
+    /** Active buzzer tone from simulation (pin + frequency), null when silent */
+    activeTone?: { pin: number; frequency: number } | null
 }
 
 // ===== Board Layout Constants =====
@@ -235,6 +241,45 @@ function isOledWiredCorrectly(compId: string, wires: Wire[]): boolean {
     const sdaOk = sdaWire.fromPin >= 0 // Must be a GPIO
 
     return gndOk && vccOk && sclOk && sdaOk
+}
+
+// ===== Buzzer: derive active state — requires complete circuit + tone or HIGH =====
+interface BuzzerState { active: boolean; frequency: number }
+
+function getBuzzerStateFromWires(
+    compId: string,
+    wires: Wire[],
+    pinStates: Map<number, PinState>,
+    activeTone?: { pin: number; frequency: number } | null,
+): BuzzerState {
+    const bWires = wires.filter(w => w.toComponentId === compId)
+    const posWire = bWires.find(w => w.toComponentPin === 'positive')
+    const negWire = bWires.find(w => w.toComponentPin === 'negative')
+
+    if (!posWire || !negWire) return { active: false, frequency: 0 }
+
+    // Negative pin must go to GND
+    const negOk = GND_PINS.includes(negWire.fromPin)
+    if (!negOk) return { active: false, frequency: 0 }
+
+    const posPin = posWire.fromPin
+
+    // Positive pin connected to VCC → always on (active buzzer, default freq)
+    if (VCC_PINS.includes(posPin)) return { active: true, frequency: 1000 }
+
+    // Positive pin connected to GPIO
+    if (posPin >= 0) {
+        // Check if tone() is active on this GPIO
+        if (activeTone && activeTone.pin === posPin) {
+            return { active: true, frequency: activeTone.frequency }
+        }
+        // Fallback: check if GPIO is HIGH (digitalWrite)
+        if (pinStates.get(posPin)?.state === 'HIGH') {
+            return { active: true, frequency: 1000 }
+        }
+    }
+
+    return { active: false, frequency: 0 }
 }
 
 // ===== Placed LED SVG Element =====
@@ -551,6 +596,112 @@ function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected, wirin
     )
 }
 
+// ===== Placed Buzzer SVG Element =====
+interface PlacedBuzzerProps {
+    comp: PlacedComponent
+    buzzerState: BuzzerState
+    onDragStart: (id: string, e: React.MouseEvent) => void
+    onSelect: (id: string) => void
+    isDragging: boolean
+    isSelected: boolean
+    wiringMode: boolean
+    onPinClick: (compId: string, pinId: string) => void
+}
+
+function PlacedBuzzer({ comp, buzzerState, onDragStart, onSelect, isDragging, isSelected, wiringMode, onPinClick }: PlacedBuzzerProps) {
+    const r = 30
+    const { active, frequency } = buzzerState
+
+    return (
+        <g
+            transform={`translate(${comp.x}, ${comp.y})`}
+            style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+            onMouseDown={(e) => { e.stopPropagation(); onSelect(comp.id); onDragStart(comp.id, e) }}
+        >
+            {/* Selection ring */}
+            {isSelected && (
+                <circle cx={0} cy={0} r={r + 12} fill="none" stroke="#3b82f6" strokeWidth={2.5}
+                    strokeDasharray="6 4" opacity={0.8}>
+                    <animate attributeName="stroke-dashoffset" values="0;20" dur="1s" repeatCount="indefinite" />
+                </circle>
+            )}
+
+            {/* Glow when active */}
+            {active && (
+                <circle cx={0} cy={0} r={r + 18} fill="#f59e0b"
+                    style={{ filter: 'blur(12px)' }}>
+                    <animate attributeName="opacity" values="0.25;0.08;0.25" dur="0.6s" repeatCount="indefinite" />
+                </circle>
+            )}
+
+            {/* Buzzer body (outer ring) */}
+            <circle cx={0} cy={0} r={r + 4} fill="#1a1a2e" stroke="#555" strokeWidth={2} />
+
+            {/* Buzzer top surface */}
+            <circle cx={0} cy={0} r={r} fill={active ? '#2a2a3e' : '#222'}
+                stroke={active ? '#f59e0b' : '#444'} strokeWidth={1.5} />
+
+            {/* Sound hole (center) */}
+            <circle cx={0} cy={0} r={6} fill={active ? '#f59e0b' : '#333'}
+                stroke="#555" strokeWidth={1} opacity={active ? 0.9 : 0.5}>
+                {active && (
+                    <animate attributeName="opacity" values="0.9;0.5;0.9" dur="0.3s" repeatCount="indefinite" />
+                )}
+            </circle>
+
+            {/* Concentric grooves */}
+            {[12, 20, 27].map(gr => (
+                <circle key={gr} cx={0} cy={0} r={gr} fill="none"
+                    stroke={active ? '#f59e0b' : '#444'} strokeWidth={0.5}
+                    opacity={active ? 0.4 : 0.2} />
+            ))}
+
+            {/* + marker on body */}
+            <text x={-14} y={-r + 10} textAnchor="middle" fontSize={10} fill="#aaa"
+                fontFamily="'Inter', sans-serif" fontWeight="bold">+</text>
+
+            {/* Sound wave arcs when active */}
+            {active && [1, 2, 3].map(i => (
+                <path key={i}
+                    d={`M ${r + 6 + i * 7} -8 Q ${r + 10 + i * 7} 0 ${r + 6 + i * 7} 8`}
+                    fill="none" stroke="#f59e0b" strokeWidth={1.5} strokeLinecap="round">
+                    <animate attributeName="opacity" values="0.7;0.1;0.7"
+                        dur={`${0.4 + i * 0.15}s`} repeatCount="indefinite" />
+                </path>
+            ))}
+
+            {/* Frequency label */}
+            <text x={0} y={r + 55} textAnchor="middle" fontSize={7}
+                fontFamily="'JetBrains Mono', monospace"
+                fill={active ? '#f59e0b' : '#666'}>
+                {active ? `${frequency} Hz` : 'SILENT'}
+            </text>
+
+            {/* Metal legs */}
+            <rect x={-8} y={r + 2} width={4} height={16} fill="#999" rx={1} />
+            <rect x={4} y={r + 2} width={4} height={16} fill="#999" rx={1} />
+
+            {/* Connection pins: left = positive (+), right = negative (−) */}
+            <g>
+                <circle cx={-6} cy={r + 12} r={7} fill="#e5e7eb" stroke="#b48600" strokeWidth={1.5}
+                    cursor={wiringMode ? "crosshair" : "default"}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, 'positive') }} />
+                <text x={-6} y={r + 26} textAnchor="middle" fontSize={6} fill="#888"
+                    fontFamily="'Inter', sans-serif">+ SIG</text>
+            </g>
+            <g>
+                <circle cx={6} cy={r + 12} r={7} fill="#e5e7eb" stroke="#6b7280" strokeWidth={1.5}
+                    cursor={wiringMode ? "crosshair" : "default"}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, 'negative') }} />
+                <text x={6} y={r + 26} textAnchor="middle" fontSize={6} fill="#888"
+                    fontFamily="'Inter', sans-serif">− GND</text>
+            </g>
+        </g>
+    )
+}
+
 // ===== Component Palette Items (grouped by category) =====
 interface PaletteCategory {
     title: string
@@ -577,6 +728,12 @@ const PALETTE_CATEGORIES: PaletteCategory[] = [
         ],
     },
     {
+        title: '🔊 Buzzers',
+        items: [
+            { type: 'buzzer', label: 'Piezo Buzzer', icon: '🔔', defaultColor: '#1a1a1a' },
+        ],
+    },
+    {
         title: '📺 Displays',
         items: [
             { type: 'oled', label: '0.96" OLED', icon: '🖥️', defaultColor: '#0a3d6b' },
@@ -595,11 +752,14 @@ function nextId() { return `comp-${++componentIdCounter}` }
 
 const BUTTON_DEBOUNCE_MS = 30
 
-export default function Board({ pinStates, onPinClick, selectedPin, placedComponents, onComponentsChange, wires, onWiresChange, onButtonPress, displayBuffer }: BoardProps) {
+export default function Board({ pinStates, onPinClick, selectedPin, placedComponents, onComponentsChange, wires, onWiresChange, onButtonPress, displayBuffer, activeTone }: BoardProps) {
     const [hoveredPin, setHoveredPin] = useState<number | null>(null)
 
     // Debounce state per button: tracks last fired state and timestamp per component
     const btnDebounce = useRef<Map<string, { state: boolean; time: number }>>(new Map())
+
+    // Buzzer audio instance — single shared instance for the board
+    const buzzerAudioRef = useRef<BuzzerAudio | null>(null)
 
     // Pan & zoom
     const [viewBox, setViewBox] = useState(DEFAULT_VB)
@@ -626,6 +786,41 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
     const [draggingId, setDraggingId] = useState<string | null>(null)
     const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null)
     const dragOffset = useRef({ x: 0, y: 0 })
+
+    // Buzzer audio: play/stop based on wired buzzer components + activeTone
+    useEffect(() => {
+        const buzzerComps = placedComponents.filter(c => c.type === 'buzzer')
+        let anyActive = false
+        let freq = 1000
+
+        for (const bc of buzzerComps) {
+            const st = getBuzzerStateFromWires(bc.id, wires, pinStates, activeTone)
+            if (st.active) {
+                anyActive = true
+                freq = st.frequency
+                break
+            }
+        }
+
+        if (anyActive) {
+            if (!buzzerAudioRef.current) buzzerAudioRef.current = new BuzzerAudio()
+            buzzerAudioRef.current.play(freq)
+        } else {
+            buzzerAudioRef.current?.stop()
+        }
+
+        return () => {
+            buzzerAudioRef.current?.stop()
+        }
+    }, [placedComponents, wires, pinStates, activeTone])
+
+    // Cleanup buzzer audio on unmount
+    useEffect(() => {
+        return () => {
+            buzzerAudioRef.current?.dispose()
+            buzzerAudioRef.current = null
+        }
+    }, [])
 
     // Convert screen coords to SVG coords (browser native - handles viewBox, zoom, preserveAspectRatio)
     const screenToSVG = useCallback((clientX: number, clientY: number) => {
@@ -1183,6 +1378,12 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                         <PlacedOLED
                             {...commonProps}
                             displayBuffer={isOledWiredCorrectly(comp.id, wires) ? displayBuffer : null}
+                        />
+                    )
+                    if (comp.type === 'buzzer') return (
+                        <PlacedBuzzer
+                            {...commonProps}
+                            buzzerState={getBuzzerStateFromWires(comp.id, wires, pinStates, activeTone)}
                         />
                     )
                     return null
