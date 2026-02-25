@@ -64,6 +64,8 @@ export interface BoardProps {
     /** Wires connecting pins to components */
     wires: Wire[]
     onWiresChange: (wires: Wire[]) => void
+    /** Fired when a placed button drives a GPIO — sends the resolved state */
+    onButtonPress?: (gpio: number, state: 'HIGH' | 'LOW') => void
 }
 
 // ===== Board Layout Constants =====
@@ -179,6 +181,40 @@ function getLedOnFromWires(
     const cLow = isCathodeLow(cathodeWire.fromPin, pinStates)
 
     return aHigh && cLow
+}
+
+// ===== Button: resolve circuit when pressed =====
+// Real tactile switch: TL-BL always connected (left node), TR-BR always connected (right node).
+// Pressing bridges left ↔ right. A complete circuit needs GPIO on one side, power on the other.
+const BUTTON_LEFT = ['tl', 'bl']
+const BUTTON_RIGHT = ['tr', 'br']
+
+interface ButtonEffect { gpioPin: number; pressedState: 'HIGH' | 'LOW' }
+
+function getButtonCircuitEffects(compId: string, wires: Wire[]): ButtonEffect[] {
+    const btnWires = wires.filter(w => w.toComponentId === compId)
+    const leftWires = btnWires.filter(w => BUTTON_LEFT.includes(w.toComponentPin))
+    const rightWires = btnWires.filter(w => BUTTON_RIGHT.includes(w.toComponentPin))
+
+    const leftGPIOs = leftWires.filter(w => w.fromPin >= 0).map(w => w.fromPin)
+    const rightGPIOs = rightWires.filter(w => w.fromPin >= 0).map(w => w.fromPin)
+    const leftHasVCC = leftWires.some(w => VCC_PINS.includes(w.fromPin))
+    const leftHasGND = leftWires.some(w => GND_PINS.includes(w.fromPin))
+    const rightHasVCC = rightWires.some(w => VCC_PINS.includes(w.fromPin))
+    const rightHasGND = rightWires.some(w => GND_PINS.includes(w.fromPin))
+
+    const effects: ButtonEffect[] = []
+
+    for (const gpio of leftGPIOs) {
+        if (rightHasVCC) effects.push({ gpioPin: gpio, pressedState: 'HIGH' })
+        else if (rightHasGND) effects.push({ gpioPin: gpio, pressedState: 'LOW' })
+    }
+    for (const gpio of rightGPIOs) {
+        if (leftHasVCC) effects.push({ gpioPin: gpio, pressedState: 'HIGH' })
+        else if (leftHasGND) effects.push({ gpioPin: gpio, pressedState: 'LOW' })
+    }
+
+    return effects
 }
 
 // ===== Placed LED SVG Element =====
@@ -322,7 +358,7 @@ function PlacedButton({ comp, onDragStart, onSelect, onPress, isDragging, isSele
             <rect x={w / 2 - 2} y={-12} width={10} height={7} fill="#999" rx={1.5} />
             <rect x={w / 2 - 2} y={6} width={10} height={7} fill="#999" rx={1.5} />
 
-            {/* Connection Pins */}
+            {/* Connection Pins — left side (tl/bl) always connected, right side (tr/br) always connected */}
             {[
                 { id: 'tl', cx: -48, cy: -8.5 },
                 { id: 'bl', cx: -48, cy: 9.5 },
@@ -334,6 +370,9 @@ function PlacedButton({ comp, onDragStart, onSelect, onPress, isDragging, isSele
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); onPinClick(comp.id, pin.id) }} />
             ))}
+            {/* Side labels */}
+            <text x={-48} y={24} textAnchor="middle" fontSize={6} fill="#888" fontFamily="'Inter', sans-serif">A</text>
+            <text x={48} y={24} textAnchor="middle" fontSize={6} fill="#888" fontFamily="'Inter', sans-serif">B</text>
 
             {/* Press area — mousedown/up for tactile press feel */}
             <rect x={-w / 2 + 8} y={-h / 2 + 8} width={w - 16} height={h - 16} fill="transparent"
@@ -496,7 +535,7 @@ const MAX_ZOOM = 3
 let componentIdCounter = 0
 function nextId() { return `comp-${++componentIdCounter}` }
 
-export default function Board({ pinStates, onPinClick, selectedPin, placedComponents, onComponentsChange, wires, onWiresChange }: BoardProps) {
+export default function Board({ pinStates, onPinClick, selectedPin, placedComponents, onComponentsChange, wires, onWiresChange, onButtonPress }: BoardProps) {
     const [hoveredPin, setHoveredPin] = useState<number | null>(null)
 
     // Pan & zoom
@@ -1053,9 +1092,21 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                         <PlacedButton
                             {...commonProps}
                             onPress={deleteMode ? () => { } : (id, pressed) => {
+                                // Update visual state
                                 onComponentsChange(placedComponents.map(c =>
                                     c.id === id ? { ...c, on: pressed } : c
                                 ))
+
+                                // Resolve circuit: which GPIOs are driven and to what state
+                                // Pressed → drive GPIO to the circuit-determined state
+                                // Released → GPIO returns to its default (INPUT_PULLUP → HIGH, INPUT → LOW)
+                                if (onButtonPress) {
+                                    const effects = getButtonCircuitEffects(id, wires)
+                                    for (const { gpioPin, pressedState } of effects) {
+                                        const releaseState = pinStates.get(gpioPin)?.mode === 'INPUT_PULLUP' ? 'HIGH' : 'LOW'
+                                        onButtonPress(gpioPin, pressed ? pressedState : releaseState)
+                                    }
+                                }
                             }}
                         />
                     )

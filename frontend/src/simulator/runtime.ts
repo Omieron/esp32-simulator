@@ -14,7 +14,7 @@ export const INPUT_PULLUP = 2
 // ===== Types =====
 
 export type PinState = 'HIGH' | 'LOW'
-export type PinMode = 'INPUT' | 'OUTPUT'
+export type PinMode = 'INPUT' | 'OUTPUT' | 'INPUT_PULLUP'
 
 export interface PinData {
   mode: PinMode
@@ -99,6 +99,7 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
 
   const toMode = (mode: number): PinMode => {
     if (mode === OUTPUT || mode === 1) return 'OUTPUT'
+    if (mode === INPUT_PULLUP || mode === 2) return 'INPUT_PULLUP'
     return 'INPUT'
   }
 
@@ -106,6 +107,10 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
     validatePin(pin)
     const idx = pin - MIN_PIN
     pins[idx].mode = toMode(mode)
+    // INPUT_PULLUP enables internal pull-up resistor → pin reads HIGH by default
+    if (pins[idx].mode === 'INPUT_PULLUP') {
+      pins[idx].state = 'HIGH'
+    }
     onPinChange?.(pin, pins[idx].state, pins[idx].mode)
   }
 

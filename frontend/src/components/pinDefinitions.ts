@@ -4,7 +4,7 @@
 /** Represents the state of a single GPIO pin. */
 export interface PinState {
     number: number
-    mode: 'INPUT' | 'OUTPUT'
+    mode: 'INPUT' | 'OUTPUT' | 'INPUT_PULLUP'
     state: 'LOW' | 'HIGH'
 }
 

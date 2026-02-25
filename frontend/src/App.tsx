@@ -47,6 +47,11 @@ function App() {
     sim.stopSimulation()
   }, [sim])
 
+  // Button press → drive wired GPIO pin in the JS runtime
+  const handleButtonPress = useCallback((gpio: number, state: 'HIGH' | 'LOW') => {
+    sim.setPinState(gpio, state)
+  }, [sim])
+
   // Status dot color
   const statusColor =
     ws.status === 'connected' ? 'var(--accent-success)' :
@@ -147,6 +152,7 @@ function App() {
               onComponentsChange={setPlacedComponents}
               wires={wires}
               onWiresChange={setWires}
+              onButtonPress={handleButtonPress}
             />
           </div>
         </section>
