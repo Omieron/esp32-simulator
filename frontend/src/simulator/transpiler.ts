@@ -66,6 +66,8 @@ function transformToRuntime(body: string): string {
   s = s.replace(/\bdigitalWrite\s*\(/g, 'runtime.digitalWrite(')
   s = s.replace(/\bdigitalRead\s*\(/g, 'runtime.digitalRead(')
   s = s.replace(/\banalogWrite\s*\(/g, 'runtime.analogWrite(')
+  s = s.replace(/\btone\s*\(/g, 'runtime.tone(')
+  s = s.replace(/\bnoTone\s*\(/g, 'runtime.noTone(')
   s = s.replace(/\bSerial\.begin\s*\(/g, 'runtime.Serial.begin(')
   s = s.replace(/\bSerial\.println\s*\(/g, 'runtime.Serial.println(')
 
