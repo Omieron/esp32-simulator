@@ -21,6 +21,7 @@ export type PinMode = 'INPUT' | 'OUTPUT' | 'INPUT_PULLUP'
 export interface PinData {
   mode: PinMode
   state: PinState
+  analogValue: number
 }
 
 export interface RuntimeCallbacks {
@@ -35,6 +36,7 @@ export interface ArduinoRuntime {
   pinMode: (pin: number, mode: number) => void
   digitalWrite: (pin: number, value: number) => void
   digitalRead: (pin: number) => number
+  analogRead: (pin: number) => number
   analogWrite: (pin: number, value: number) => void
   delay: (ms: number) => Promise<void>
   tone: (pin: number, frequency: number, duration?: number) => void
@@ -63,6 +65,8 @@ export interface PinSnapshotItem {
 export interface RuntimeHostAPI {
   /** Update pin state from outside (e.g. button press). Used in Task 3. */
   setPinState: (pin: number, state: PinState) => void
+  /** Update analog value from outside (e.g. potentiometer slider). */
+  setPinAnalog: (pin: number, value: number) => void
   /** Get full pin state for UI sync (startup or full refresh). */
   getPinSnapshot: () => PinSnapshotItem[]
 }
@@ -104,6 +108,7 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
   const pins: PinData[] = Array.from({ length: TOTAL_PINS }, () => ({
     mode: 'INPUT' as PinMode,
     state: 'LOW' as PinState,
+    analogValue: 0,
   }))
 
   const toState = (value: number): PinState =>
@@ -137,6 +142,12 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
     validatePin(pin)
     const idx = pin - MIN_PIN
     return pins[idx].state === 'HIGH' ? HIGH : LOW
+  }
+
+  const analogRead = (pin: number): number => {
+    validatePin(pin)
+    const idx = pin - MIN_PIN
+    return pins[idx].analogValue
   }
 
   const analogWrite = (pin: number, value: number): void => {
@@ -216,6 +227,12 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
     onPinChange?.(pin, pins[idx].state, pins[idx].mode)
   }
 
+  const setPinAnalog = (pin: number, value: number): void => {
+    validatePin(pin)
+    const idx = pin - MIN_PIN
+    pins[idx].analogValue = Math.max(0, Math.min(4095, Math.round(value)))
+  }
+
   const getPinSnapshot = (): PinSnapshotItem[] =>
     pins.map((p, i) => ({
       number: i + MIN_PIN,
@@ -227,6 +244,7 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
     pinMode,
     digitalWrite,
     digitalRead,
+    analogRead,
     analogWrite,
     tone,
     noTone,
@@ -243,6 +261,7 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
     WHITE: OLED_WHITE,
     BLACK: OLED_BLACK,
     setPinState,
+    setPinAnalog,
     getPinSnapshot,
   }
 }
