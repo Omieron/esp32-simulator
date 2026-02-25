@@ -153,6 +153,7 @@ function App() {
               wires={wires}
               onWiresChange={setWires}
               onButtonPress={handleButtonPress}
+              displayBuffer={sim.displayBuffer}
             />
           </div>
         </section>

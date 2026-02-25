@@ -16,6 +16,8 @@ export interface UseSimulationReturn {
   isSimRunning: boolean
   /** Last transpile or runtime error */
   lastError: string | null
+  /** OLED display pixel buffer (128×64, each byte 0 or 1) */
+  displayBuffer: Uint8Array | null
   /** Start simulation with Arduino code (transpiled to JS) */
   startSimulation: (code: string) => void
   /** Stop the running simulation */
@@ -45,6 +47,7 @@ export default function useSimulation(): UseSimulationReturn {
   const [simSerialOutput, setSimSerialOutput] = useState<string[]>([])
   const [isSimRunning, setIsSimRunning] = useState(false)
   const [lastError, setLastError] = useState<string | null>(null)
+  const [displayBuffer, setDisplayBuffer] = useState<Uint8Array | null>(null)
   const runningRef = useRef(false)
   const runtimeRef = useRef<ReturnType<typeof createRuntime> | null>(null)
 
@@ -75,6 +78,9 @@ export default function useSimulation(): UseSimulationReturn {
             ? lines.slice(lines.length - MAX_SERIAL_LINES)
             : lines
         })
+      },
+      onDisplayUpdate: (buffer: Uint8Array) => {
+        setDisplayBuffer(buffer)
       },
     })
 
@@ -118,6 +124,7 @@ export default function useSimulation(): UseSimulationReturn {
     runtimeRef.current = null
     setIsSimRunning(false)
     setSimPinStates(createInitialPinStates())
+    setDisplayBuffer(null)
     setLastError(null)
   }, [])
 
@@ -137,6 +144,7 @@ export default function useSimulation(): UseSimulationReturn {
     simSerialOutput,
     isSimRunning,
     lastError,
+    displayBuffer,
     startSimulation,
     stopSimulation,
     setPinState,

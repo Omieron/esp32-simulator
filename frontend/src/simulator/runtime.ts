@@ -3,6 +3,8 @@
  * Mimics Arduino API in TypeScript for browser-based simulation.
  */
 
+import { OLEDDisplay, SSD1306_SWITCHCAPVCC, OLED_WHITE, OLED_BLACK } from './oled'
+
 // ===== Constants (Arduino equivalents) =====
 
 export const HIGH = 1
@@ -24,6 +26,7 @@ export interface PinData {
 export interface RuntimeCallbacks {
   onPinChange?: (pin: number, state: PinState, mode: PinMode) => void
   onSerial?: (data: string) => void
+  onDisplayUpdate?: (buffer: Uint8Array) => void
 }
 
 export interface ArduinoRuntime {
@@ -33,11 +36,16 @@ export interface ArduinoRuntime {
   analogWrite: (pin: number, value: number) => void
   delay: (ms: number) => Promise<void>
   Serial: { begin: (baud: number) => void; println: (msg: string | number) => void }
+  Wire: { begin: () => void }
+  display: OLEDDisplay
   HIGH: number
   LOW: number
   INPUT: number
   OUTPUT: number
   INPUT_PULLUP: number
+  SSD1306_SWITCHCAPVCC: number
+  WHITE: number
+  BLACK: number
 }
 
 /** Snapshot item for a single pin (used by getPinSnapshot). */
@@ -86,7 +94,7 @@ function validatePin(pin: number): void {
  * Includes host API (setPinState, getPinSnapshot) for simulator integration.
  */
 export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntime {
-  const { onPinChange, onSerial } = callbacks
+  const { onPinChange, onSerial, onDisplayUpdate } = callbacks
 
   // Internal pin state storage
   const pins: PinData[] = Array.from({ length: TOTAL_PINS }, () => ({
@@ -146,13 +154,17 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
   }
 
   const Serial = {
-    begin: (_baud: number): void => {
-      // No-op for simulation
-    },
+    begin: (_baud: number): void => {},
     println: (msg: string | number): void => {
       onSerial?.(String(msg))
     },
   }
+
+  const Wire = {
+    begin: (): void => {},
+  }
+
+  const display = new OLEDDisplay({ onDisplayUpdate })
 
   // Host API: for external updates (e.g. button press) and UI sync
   const setPinState = (pin: number, state: PinState): void => {
@@ -176,11 +188,16 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
     analogWrite,
     delay,
     Serial,
+    Wire,
+    display,
     HIGH,
     LOW,
     INPUT,
     OUTPUT,
     INPUT_PULLUP,
+    SSD1306_SWITCHCAPVCC,
+    WHITE: OLED_WHITE,
+    BLACK: OLED_BLACK,
     setPinState,
     getPinSnapshot,
   }

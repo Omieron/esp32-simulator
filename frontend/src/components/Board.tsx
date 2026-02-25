@@ -66,6 +66,8 @@ export interface BoardProps {
     onWiresChange: (wires: Wire[]) => void
     /** Fired when a placed button drives a GPIO — sends the resolved state */
     onButtonPress?: (gpio: number, state: 'HIGH' | 'LOW') => void
+    /** OLED display pixel buffer (128×64, each byte 0 or 1) from simulation */
+    displayBuffer?: Uint8Array | null
 }
 
 // ===== Board Layout Constants =====
@@ -215,6 +217,24 @@ function getButtonCircuitEffects(compId: string, wires: Wire[]): ButtonEffect[] 
     }
 
     return effects
+}
+
+// ===== OLED: requires VCC + GND + SCL (GPIO) + SDA (GPIO) for complete I2C circuit =====
+function isOledWiredCorrectly(compId: string, wires: Wire[]): boolean {
+    const oledWires = wires.filter(w => w.toComponentId === compId)
+    const gndWire = oledWires.find(w => w.toComponentPin === 'gnd')
+    const vccWire = oledWires.find(w => w.toComponentPin === 'vcc')
+    const sclWire = oledWires.find(w => w.toComponentPin === 'scl')
+    const sdaWire = oledWires.find(w => w.toComponentPin === 'sda')
+
+    if (!gndWire || !vccWire || !sclWire || !sdaWire) return false
+
+    const gndOk = GND_PINS.includes(gndWire.fromPin)
+    const vccOk = VCC_PINS.includes(vccWire.fromPin)
+    const sclOk = sclWire.fromPin >= 0 // Must be a GPIO
+    const sdaOk = sdaWire.fromPin >= 0 // Must be a GPIO
+
+    return gndOk && vccOk && sclOk && sdaOk
 }
 
 // ===== Placed LED SVG Element =====
@@ -394,15 +414,45 @@ interface PlacedOLEDProps {
     isSelected: boolean
     wiringMode: boolean
     onPinClick: (compId: string, pinId: string) => void
+    displayBuffer?: Uint8Array | null
 }
 
-function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected, wiringMode, onPinClick }: PlacedOLEDProps) {
+function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected, wiringMode, onPinClick, displayBuffer }: PlacedOLEDProps) {
     const w = 160
     const h = 100
     const screenW = 136
     const screenH = 68
     const screenX = -screenW / 2
     const screenY = -h / 2 + 10
+    const [imgSrc, setImgSrc] = useState<string>('')
+
+    // Render pixel buffer to an offscreen canvas → data URL for SVG <image>
+    useEffect(() => {
+        if (!displayBuffer || displayBuffer.length < 128 * 64) {
+            setImgSrc('')
+            return
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = 128
+        canvas.height = 64
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+
+        const imgData = ctx.createImageData(128, 64)
+        for (let i = 0; i < 128 * 64; i++) {
+            const idx = i * 4
+            if (displayBuffer[i]) {
+                imgData.data[idx] = 0       // R
+                imgData.data[idx + 1] = 204 // G
+                imgData.data[idx + 2] = 255 // B
+                imgData.data[idx + 3] = 255 // A
+            }
+        }
+        ctx.putImageData(imgData, 0, 0)
+        setImgSrc(canvas.toDataURL())
+    }, [displayBuffer])
+
+    const hasBuffer = !!imgSrc
 
     return (
         <g
@@ -433,7 +483,7 @@ function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected, wirin
             <rect x={screenX - 3} y={screenY - 3} width={screenW + 6} height={screenH + 6} rx={3}
                 fill="#111" stroke="#333" strokeWidth={1} />
 
-            {/* Screen area */}
+            {/* Screen background */}
             <rect x={screenX} y={screenY} width={screenW} height={screenH} rx={2}
                 fill="#050505" />
 
@@ -446,19 +496,27 @@ function PlacedOLED({ comp, onDragStart, onSelect, isDragging, isSelected, wirin
             <rect x={screenX} y={screenY} width={screenW} height={screenH} rx={2}
                 fill={`url(#oled-grid-${comp.id})`} opacity={0.4} />
 
-            {/* Screen content — shows text if powered */}
-            {comp.on && (
+            {/* OLED pixel buffer rendered as SVG image */}
+            {imgSrc && (
+                <image
+                    href={imgSrc}
+                    x={screenX + 4} y={screenY + 2}
+                    width={screenW - 8} height={screenH - 4}
+                    preserveAspectRatio="none"
+                    style={{ imageRendering: 'pixelated' }}
+                />
+            )}
+
+            {/* Fallback text when no buffer data */}
+            {!hasBuffer && (
                 <>
-                    {/* Subtle glow */}
-                    <rect x={screenX} y={screenY} width={screenW} height={screenH} rx={2}
-                        fill="#00aaff" opacity={0.03} />
-                    <text x={0} y={screenY + 26} textAnchor="middle" fontSize={12}
-                        fontFamily="'JetBrains Mono', monospace" fill="#00ccff" opacity={0.9}>
-                        {comp.screenText || 'Hello ESP32!'}
+                    <text x={0} y={screenY + 26} textAnchor="middle" fontSize={10}
+                        fontFamily="'JetBrains Mono', monospace" fill="#00ccff" opacity={0.4}>
+                        SSD1306 128×64
                     </text>
-                    <text x={0} y={screenY + 48} textAnchor="middle" fontSize={9}
-                        fontFamily="'JetBrains Mono', monospace" fill="#00ccff" opacity={0.5}>
-                        SSD1306 128x64
+                    <text x={0} y={screenY + 44} textAnchor="middle" fontSize={7}
+                        fontFamily="'JetBrains Mono', monospace" fill="#00ccff" opacity={0.25}>
+                        I2C 0x3C
                     </text>
                 </>
             )}
@@ -537,7 +595,7 @@ function nextId() { return `comp-${++componentIdCounter}` }
 
 const BUTTON_DEBOUNCE_MS = 30
 
-export default function Board({ pinStates, onPinClick, selectedPin, placedComponents, onComponentsChange, wires, onWiresChange, onButtonPress }: BoardProps) {
+export default function Board({ pinStates, onPinClick, selectedPin, placedComponents, onComponentsChange, wires, onWiresChange, onButtonPress, displayBuffer }: BoardProps) {
     const [hoveredPin, setHoveredPin] = useState<number | null>(null)
 
     // Debounce state per button: tracks last fired state and timestamp per component
@@ -1121,7 +1179,12 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                             }}
                         />
                     )
-                    if (comp.type === 'oled') return <PlacedOLED {...commonProps} />
+                    if (comp.type === 'oled') return (
+                        <PlacedOLED
+                            {...commonProps}
+                            displayBuffer={isOledWiredCorrectly(comp.id, wires) ? displayBuffer : null}
+                        />
+                    )
                     return null
                 })}
             </svg>
