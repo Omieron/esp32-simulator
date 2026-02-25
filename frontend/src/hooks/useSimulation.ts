@@ -26,6 +26,8 @@ export interface UseSimulationReturn {
   stopSimulation: () => void
   /** Update pin state from outside (e.g. button press). For Task 3+ integration. */
   setPinState: (pin: number, state: 'HIGH' | 'LOW') => void
+  /** Update analog value from outside (e.g. potentiometer). 0-4095 range. */
+  setPinAnalog: (pin: number, value: number) => void
   /** Clear serial output */
   clearSimSerial: () => void
 }
@@ -142,6 +144,13 @@ export default function useSimulation(): UseSimulationReturn {
     }
   }, [])
 
+  const setPinAnalog = useCallback((pin: number, value: number) => {
+    const runtime = runtimeRef.current
+    if (runtime) {
+      runtime.setPinAnalog(pin, value)
+    }
+  }, [])
+
   const clearSimSerial = useCallback(() => {
     setSimSerialOutput([])
   }, [])
@@ -156,6 +165,7 @@ export default function useSimulation(): UseSimulationReturn {
     startSimulation,
     stopSimulation,
     setPinState,
+    setPinAnalog,
     clearSimSerial,
   }
 }
