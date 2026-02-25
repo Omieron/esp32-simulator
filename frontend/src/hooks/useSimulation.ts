@@ -69,10 +69,10 @@ export default function useSimulation(): UseSimulationReturn {
     setLastError(null)
 
     const runtime = createRuntime({
-      onPinChange: (pin, state, mode) => {
+      onPinChange: (pin, state, mode, pwmValue) => {
         setSimPinStates((prev) => {
           const next = new Map(prev)
-          next.set(pin, { number: pin, mode, state })
+          next.set(pin, { number: pin, mode, state, pwmValue })
           return next
         })
       },

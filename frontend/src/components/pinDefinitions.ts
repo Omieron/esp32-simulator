@@ -6,6 +6,7 @@ export interface PinState {
     number: number
     mode: 'INPUT' | 'OUTPUT' | 'INPUT_PULLUP'
     state: 'LOW' | 'HIGH'
+    pwmValue?: number
 }
 
 /** Describes a pin's physical location and label on the board. */

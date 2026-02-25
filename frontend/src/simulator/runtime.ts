@@ -22,10 +22,11 @@ export interface PinData {
   mode: PinMode
   state: PinState
   analogValue: number
+  pwmValue: number
 }
 
 export interface RuntimeCallbacks {
-  onPinChange?: (pin: number, state: PinState, mode: PinMode) => void
+  onPinChange?: (pin: number, state: PinState, mode: PinMode, pwmValue?: number) => void
   onSerial?: (data: string) => void
   onDisplayUpdate?: (buffer: Uint8Array) => void
   /** Fired when tone() or noTone() is called. frequency=null means stopped. */
@@ -109,6 +110,7 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
     mode: 'INPUT' as PinMode,
     state: 'LOW' as PinState,
     analogValue: 0,
+    pwmValue: 0,
   }))
 
   const toState = (value: number): PinState =>
@@ -135,7 +137,8 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
     validatePin(pin)
     const idx = pin - MIN_PIN
     pins[idx].state = toState(value)
-    onPinChange?.(pin, pins[idx].state, pins[idx].mode)
+    pins[idx].pwmValue = pins[idx].state === 'HIGH' ? 255 : 0
+    onPinChange?.(pin, pins[idx].state, pins[idx].mode, pins[idx].pwmValue)
   }
 
   const digitalRead = (pin: number): number => {
@@ -152,11 +155,11 @@ export function createRuntime(callbacks: RuntimeCallbacks = {}): SimulatorRuntim
 
   const analogWrite = (pin: number, value: number): void => {
     validatePin(pin)
-    // Simple simulation: value > 127 → HIGH, else LOW
-    const state: PinState = value > 127 ? 'HIGH' : 'LOW'
+    const clamped = Math.max(0, Math.min(255, Math.round(value)))
     const idx = pin - MIN_PIN
-    pins[idx].state = state
-    onPinChange?.(pin, pins[idx].state, pins[idx].mode)
+    pins[idx].pwmValue = clamped
+    pins[idx].state = clamped > 0 ? 'HIGH' : 'LOW'
+    onPinChange?.(pin, pins[idx].state, pins[idx].mode, clamped)
   }
 
   /**

@@ -180,22 +180,30 @@ function isCathodeLow(fromPin: number, pinStates: Map<number, PinState>): boolea
     return false
 }
 
-function getLedOnFromWires(
+function getLedBrightness(
     compId: string,
     wires: Wire[],
     pinStates: Map<number, PinState>
-): boolean {
+): number {
     const ledWires = wires.filter(w => w.toComponentId === compId)
     const anodeWire = ledWires.find(w => w.toComponentPin === 'anode')
     const cathodeWire = ledWires.find(w => w.toComponentPin === 'cathode')
 
-    // Both legs must be wired for a complete circuit
-    if (!anodeWire || !cathodeWire) return false
+    if (!anodeWire || !cathodeWire) return 0
 
     const aHigh = isAnodeHigh(anodeWire.fromPin, pinStates)
     const cLow = isCathodeLow(cathodeWire.fromPin, pinStates)
+    if (!aHigh || !cLow) return 0
 
-    return aHigh && cLow
+    // Check for PWM value on anode GPIO for gradual brightness
+    const anodePin = anodeWire.fromPin
+    if (anodePin >= 0) {
+        const ps = pinStates.get(anodePin)
+        if (ps?.pwmValue !== undefined) return ps.pwmValue / 255
+    }
+
+    // VCC or digital HIGH → full brightness
+    return 1
 }
 
 // ===== Button: resolve circuit when pressed =====
@@ -310,8 +318,8 @@ function getPotWiredGpio(compId: string, wires: Wire[]): number | null {
 // ===== Placed LED SVG Element =====
 interface PlacedLEDProps {
     comp: PlacedComponent
-    /** Derived from wired GPIO: HIGH on anode pin = lit */
-    isOn: boolean
+    /** 0.0 = off, 1.0 = full brightness, supports gradual PWM values */
+    brightness: number
     onDragStart: (id: string, e: React.MouseEvent) => void
     onSelect: (id: string) => void
     isDragging: boolean
@@ -320,8 +328,10 @@ interface PlacedLEDProps {
     onPinClick: (compId: string, pinId: string) => void
 }
 
-function PlacedLED({ comp, isOn, onDragStart, onSelect, isDragging, isSelected, wiringMode, onPinClick }: PlacedLEDProps) {
+function PlacedLED({ comp, brightness, onDragStart, onSelect, isDragging, isSelected, wiringMode, onPinClick }: PlacedLEDProps) {
     const r = 38
+    const isOn = brightness > 0
+    const b = brightness
     return (
         <g
             transform={`translate(${comp.x}, ${comp.y})`}
@@ -336,25 +346,20 @@ function PlacedLED({ comp, isOn, onDragStart, onSelect, isDragging, isSelected, 
                 </circle>
             )}
 
-            {/* Glow when ON — opacity animation for brightness effect */}
+            {/* Glow — intensity scales with brightness */}
             {isOn && (
                 <circle cx={0} cy={0} r={r + 20} fill={comp.color}
-                    style={{ filter: 'blur(10px)' }}>
-                    <animate attributeName="opacity" values="0.35;0.12;0.35" dur="1.5s" repeatCount="indefinite" />
-                </circle>
+                    opacity={0.12 + b * 0.23}
+                    style={{ filter: 'blur(10px)' }} />
             )}
 
             {/* LED base (dark ring) */}
             <circle cx={0} cy={0} r={r + 5} fill="#1a1a2e" stroke="#444" strokeWidth={2.5} />
 
-            {/* LED dome — color from prop, opacity animation when lit */}
+            {/* LED dome — opacity driven by brightness */}
             <circle cx={0} cy={0} r={r} fill={isOn ? comp.color : '#333'}
                 stroke={isOn ? comp.color : '#555'} strokeWidth={2}
-                opacity={isOn ? 0.9 : 0.25}>
-                {isOn && (
-                    <animate attributeName="opacity" values="0.85;1;0.85" dur="1.2s" repeatCount="indefinite" />
-                )}
-            </circle>
+                opacity={isOn ? 0.25 + b * 0.65 : 0.25} />
 
             {/* Tinted dome hint (show what color when off) */}
             {!isOn && (
@@ -1529,7 +1534,7 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                     if (comp.type === 'led') return (
                         <PlacedLED
                             {...commonProps}
-                            isOn={getLedOnFromWires(comp.id, wires, pinStates)}
+                            brightness={getLedBrightness(comp.id, wires, pinStates)}
                         />
                     )
                     if (comp.type === 'button') return (
