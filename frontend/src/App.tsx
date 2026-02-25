@@ -155,6 +155,7 @@ function App() {
               onButtonPress={handleButtonPress}
               displayBuffer={sim.displayBuffer}
               activeTone={sim.activeTone}
+              onAnalogChange={(gpio, value) => sim.setPinAnalog(gpio, value)}
             />
           </div>
         </section>
