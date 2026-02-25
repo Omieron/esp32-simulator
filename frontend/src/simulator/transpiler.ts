@@ -100,6 +100,7 @@ function transformToRuntime(body: string): string {
   s = s.replace(/\bpinMode\s*\(/g, 'runtime.pinMode(')
   s = s.replace(/\bdigitalWrite\s*\(/g, 'runtime.digitalWrite(')
   s = s.replace(/\bdigitalRead\s*\(/g, 'runtime.digitalRead(')
+  s = s.replace(/\banalogRead\s*\(/g, 'runtime.analogRead(')
   s = s.replace(/\banalogWrite\s*\(/g, 'runtime.analogWrite(')
   s = s.replace(/\btone\s*\(/g, 'runtime.tone(')
   s = s.replace(/\bnoTone\s*\(/g, 'runtime.noTone(')
