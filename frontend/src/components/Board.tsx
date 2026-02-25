@@ -535,8 +535,13 @@ const MAX_ZOOM = 3
 let componentIdCounter = 0
 function nextId() { return `comp-${++componentIdCounter}` }
 
+const BUTTON_DEBOUNCE_MS = 30
+
 export default function Board({ pinStates, onPinClick, selectedPin, placedComponents, onComponentsChange, wires, onWiresChange, onButtonPress }: BoardProps) {
     const [hoveredPin, setHoveredPin] = useState<number | null>(null)
+
+    // Debounce state per button: tracks last fired state and timestamp per component
+    const btnDebounce = useRef<Map<string, { state: boolean; time: number }>>(new Map())
 
     // Pan & zoom
     const [viewBox, setViewBox] = useState(DEFAULT_VB)
@@ -1092,6 +1097,12 @@ export default function Board({ pinStates, onPinClick, selectedPin, placedCompon
                         <PlacedButton
                             {...commonProps}
                             onPress={deleteMode ? () => { } : (id, pressed) => {
+                                // Debounce: allow state transitions, filter rapid same-state duplicates
+                                const now = Date.now()
+                                const prev = btnDebounce.current.get(id)
+                                if (prev && pressed === prev.state && now - prev.time < BUTTON_DEBOUNCE_MS) return
+                                btnDebounce.current.set(id, { state: pressed, time: now })
+
                                 // Update visual state
                                 onComponentsChange(placedComponents.map(c =>
                                     c.id === id ? { ...c, on: pressed } : c
