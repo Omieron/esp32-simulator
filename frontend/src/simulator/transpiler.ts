@@ -177,10 +177,10 @@ function extractGlobalDeclarations(code: string): string[] {
 
   // Match simple variable declarations: type name = value;
   const varRegex = /\b(?:int|float|double|long|unsigned|char|uint8_t|uint16_t|uint32_t|int8_t|int16_t|int32_t|byte|bool|String)\s+(\w+)\s*=\s*([^;]+);/g
-  let vm
-  while ((vm = varRegex.exec(stripped)) !== null) {
-    if (!lines.some(l => l.includes(`const ${vm[1]}`) || l.includes(`let ${vm[1]}`))) {
-      lines.push(`let ${vm[1]} = ${vm[2].trim()};`)
+  for (const vm of stripped.matchAll(varRegex)) {
+    const name = vm[1]
+    if (!lines.some(l => l.includes(`const ${name}`) || l.includes(`let ${name}`))) {
+      lines.push(`let ${name} = ${vm[2].trim()};`)
     }
   }
 
