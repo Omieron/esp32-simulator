@@ -53,10 +53,45 @@ function extractDefines(code: string): Map<string, string> {
 }
 
 /**
+ * Transform C/C++ syntax constructs into valid JavaScript equivalents.
+ */
+function transformCppSyntax(body: string): string {
+  let s = body
+
+  // Array declarations: int/float/long/... name[] = {a, b, c}; → const name = [a, b, c];
+  s = s.replace(/\b(?:int|float|double|long|unsigned|char|uint8_t|uint16_t|uint32_t|int8_t|int16_t|int32_t|byte)\s+(\w+)\s*\[\s*\d*\s*\]\s*=\s*\{([^}]*)\}\s*;/g,
+    (_match, name, values) => `const ${name} = [${values}];`)
+
+  // for-loop: for (int/byte/... i = → for (let i =
+  s = s.replace(/\bfor\s*\(\s*(?:int|float|double|long|unsigned|char|uint8_t|uint16_t|uint32_t|byte)\s+/g, 'for (let ')
+
+  // Variable declarations: int x = val; → let x = val;
+  s = s.replace(/\b(?:int|float|double|long|unsigned|char|uint8_t|uint16_t|uint32_t|int8_t|int16_t|int32_t|byte)\s+(\w+)\s*=/g, 'let $1 =')
+
+  // Uninitialized variable declarations: int x; → let x;
+  s = s.replace(/\b(?:int|float|double|long|unsigned|char|uint8_t|uint16_t|uint32_t|int8_t|int16_t|int32_t|byte)\s+(\w+)\s*;/g, 'let $1;')
+
+  // bool → let
+  s = s.replace(/\bbool\s+(\w+)\s*=/g, 'let $1 =')
+  s = s.replace(/\bbool\s+(\w+)\s*;/g, 'let $1;')
+
+  // String → let (Arduino String type)
+  s = s.replace(/\bString\s+(\w+)\s*=/g, 'let $1 =')
+  s = s.replace(/\bString\s+(\w+)\s*;/g, 'let $1;')
+
+  // true/false are same in JS, no change needed
+
+  return s
+}
+
+/**
  * Transform Arduino API calls to runtime calls.
  */
 function transformToRuntime(body: string): string {
   let s = body
+
+  // C/C++ syntax → JavaScript syntax (must run first)
+  s = transformCppSyntax(s)
 
   // Replace delay( with await runtime.delay( (async)
   s = s.replace(/\bdelay\s*\(/g, 'await runtime.delay(')
@@ -105,6 +140,54 @@ function transformToRuntime(body: string): string {
 }
 
 /**
+ * Extract global variable and array declarations outside setup()/loop().
+ * Converts C types to JS and returns lines to inject at the top scope.
+ */
+function extractGlobalDeclarations(code: string): string[] {
+  const lines: string[] = []
+
+  // Strip #define, #include, comments, and function bodies to find top-level declarations
+  let stripped = code
+    .replace(/#\s*(?:define|include)\s+[^\n]*/g, '')
+    .replace(/\/\/[^\n]*/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+
+  // Remove function bodies (void setup/loop and any other functions)
+  const funcRegex = /\b\w+\s+\w+\s*\([^)]*\)\s*\{/g
+  let fm
+  while ((fm = funcRegex.exec(stripped)) !== null) {
+    const start = fm.index
+    let depth = 1
+    let j = start + fm[0].length
+    while (j < stripped.length && depth > 0) {
+      if (stripped[j] === '{') depth++
+      else if (stripped[j] === '}') depth--
+      j++
+    }
+    stripped = stripped.slice(0, start) + stripped.slice(j)
+    funcRegex.lastIndex = start
+  }
+
+  // Match array declarations: type name[] = {values};  (possibly multi-line)
+  const arrRegex = /\b(?:int|float|double|long|unsigned|char|uint8_t|uint16_t|uint32_t|int8_t|int16_t|int32_t|byte)\s+(\w+)\s*\[\s*\d*\s*\]\s*=\s*\{([^}]*)\}\s*;/g
+  let am
+  while ((am = arrRegex.exec(stripped)) !== null) {
+    lines.push(`const ${am[1]} = [${am[2]}];`)
+  }
+
+  // Match simple variable declarations: type name = value;
+  const varRegex = /\b(?:int|float|double|long|unsigned|char|uint8_t|uint16_t|uint32_t|int8_t|int16_t|int32_t|byte|bool|String)\s+(\w+)\s*=\s*([^;]+);/g
+  let vm
+  while ((vm = varRegex.exec(stripped)) !== null) {
+    if (!lines.some(l => l.includes(`const ${vm[1]}`) || l.includes(`let ${vm[1]}`))) {
+      lines.push(`let ${vm[1]} = ${vm[2].trim()};`)
+    }
+  }
+
+  return lines
+}
+
+/**
  * Transpile Arduino code to JavaScript.
  * Returns executable JS that expects `runtime` and `running` in scope.
  */
@@ -124,11 +207,15 @@ export function transpile(arduinoCode: string): TranspileResult {
     .map(([name, value]) => `const ${name} = ${value};`)
     .join('\n')
 
+  const globalDecls = extractGlobalDeclarations(arduinoCode)
+  const globalLines = globalDecls.join('\n  ')
+
   const setupCode = transformToRuntime(setupBody)
   const loopCode = transformToRuntime(loopBody)
 
   const jsCode = `(function(runtime) {
   ${defineLines}
+  ${globalLines}
 
   async function setup() {
     ${setupCode}
