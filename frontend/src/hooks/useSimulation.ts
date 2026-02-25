@@ -18,6 +18,8 @@ export interface UseSimulationReturn {
   lastError: string | null
   /** OLED display pixel buffer (128×64, each byte 0 or 1) */
   displayBuffer: Uint8Array | null
+  /** Active buzzer tone (pin + frequency), null when silent */
+  activeTone: { pin: number; frequency: number } | null
   /** Start simulation with Arduino code (transpiled to JS) */
   startSimulation: (code: string) => void
   /** Stop the running simulation */
@@ -48,6 +50,7 @@ export default function useSimulation(): UseSimulationReturn {
   const [isSimRunning, setIsSimRunning] = useState(false)
   const [lastError, setLastError] = useState<string | null>(null)
   const [displayBuffer, setDisplayBuffer] = useState<Uint8Array | null>(null)
+  const [activeTone, setActiveTone] = useState<{ pin: number; frequency: number } | null>(null)
   const runningRef = useRef(false)
   const runtimeRef = useRef<ReturnType<typeof createRuntime> | null>(null)
 
@@ -81,6 +84,9 @@ export default function useSimulation(): UseSimulationReturn {
       },
       onDisplayUpdate: (buffer: Uint8Array) => {
         setDisplayBuffer(buffer)
+      },
+      onToneChange: (pin: number, frequency: number | null) => {
+        setActiveTone(frequency !== null ? { pin, frequency } : null)
       },
     })
 
@@ -125,6 +131,7 @@ export default function useSimulation(): UseSimulationReturn {
     setIsSimRunning(false)
     setSimPinStates(createInitialPinStates())
     setDisplayBuffer(null)
+    setActiveTone(null)
     setLastError(null)
   }, [])
 
@@ -145,6 +152,7 @@ export default function useSimulation(): UseSimulationReturn {
     isSimRunning,
     lastError,
     displayBuffer,
+    activeTone,
     startSimulation,
     stopSimulation,
     setPinState,
