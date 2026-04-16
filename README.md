@@ -2,6 +2,10 @@
 
 A web-based ESP32-S3 playground that lets you **write Arduino-style sketches**, **wire up virtual components**, and **run the simulation in your browser**. The repo also contains a Go backend with a WebSocket protocol and an Arduino compilation pipeline (via `arduino-cli`) that can be used for “real” firmware builds and future tighter hardware emulation.
 
+## Preview
+
+![Simulator UI example](assets/example-ss.png)
+
 ## What you get
 
 - **In-browser Arduino runtime**: a lightweight Arduino C++ → JavaScript transpiler + runtime (no installs required to try it).
